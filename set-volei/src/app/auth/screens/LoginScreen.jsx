@@ -8,7 +8,8 @@ import {
   ActivityIndicator,
   KeyboardAvoidingView,
   Platform,
-} from 'react-native'import { useRouter } from 'expo-router'
+} from 'react-native'
+import { useRouter } from 'expo-router'
 import { login } from '../storage/authStorage'
 
 export default function LoginScreen() {
@@ -84,8 +85,6 @@ export default function LoginScreen() {
           </TouchableOpacity>
         </View>
 
-
-
       </View>
     </KeyboardAvoidingView>
   )
@@ -158,5 +157,4 @@ const styles = StyleSheet.create({
     fontWeight: 'bold',
     fontSize: 16,
   },
-
 })
