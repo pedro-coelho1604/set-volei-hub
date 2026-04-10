@@ -4,6 +4,11 @@ export const userMock = {
   email: 'pedrocoelho@gmail.com',
   password: '123',
   telefone: '123456789',
+  numero: '10',
+  posicao: 'Levantador',
+  peso: '78',
+  altura: '1,85',
+  nascimento: '15/03/2000',
 }
 
 export const planMock = {

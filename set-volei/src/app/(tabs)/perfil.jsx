@@ -1,273 +1,347 @@
 import {
-  View,
-  Text,
-  StyleSheet,
-  Image,
-  TextInput,
-  TouchableOpacity,
-  Alert,
+  View, Text, StyleSheet, Image, TextInput,
+  TouchableOpacity, Alert, ScrollView, KeyboardAvoidingView, Platform,
 } from 'react-native'
 import { SafeAreaView } from 'react-native-safe-area-context'
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useCallback } from 'react'
 import * as ImagePicker from 'expo-image-picker'
 import BottomMenu from '../../components/BottomMenu'
 import { useRouter } from 'expo-router'
+import { getStoredUser, logout } from '../auth/storage/authStorage'
 import AsyncStorage from '@react-native-async-storage/async-storage'
 import { userMock, planMock } from '../../mocks/userMocks'
-import { logout } from '../auth/storage/authStorage'
+
+const USER_KEY = '@set_volei:user'
+const POSICOES = ['Levantador', 'Líbero', 'Ponteiro', 'Oposto', 'Central', 'Outro']
+
+function formatDate(text) {
+  const digits = text.replace(/\D/g, '').slice(0, 8)
+  if (digits.length <= 2) return digits
+  if (digits.length <= 4) return `${digits.slice(0,2)}/${digits.slice(2)}`
+  return `${digits.slice(0,2)}/${digits.slice(2,4)}/${digits.slice(4)}`
+}
 
 export default function Perfil() {
   const router = useRouter()
-  const [avatar, setAvatar] = useState(userMock.avatar)
 
-  const [name, setName] = useState(userMock.name)
-  const [email, setEmail] = useState(userMock.email)
-  const [telefone, setTelefone] = useState(userMock.telefone)
+  const [avatar, setAvatar]         = useState('')
+  const [name, setName]             = useState('')
+  const [email, setEmail]           = useState('')
+  const [telefone, setTelefone]     = useState('')
+  const [numero, setNumero]         = useState('')
+  const [posicao, setPosicao]       = useState('')
+  const [peso, setPeso]             = useState('')
+  const [altura, setAltura]         = useState('')
+  const [nascimento, setNascimento] = useState('')
+  const [plan, setPlan]             = useState(null)
+  const [edited, setEdited]         = useState(false)
+  const [saving, setSaving]         = useState(false)
 
-  const plan = planMock
-
-  useEffect(() => {
-    loadUser()
+  const loadUser = useCallback(async () => {
+    const stored = await getStoredUser()
+    const user = stored ?? userMock
+    setAvatar(user.avatar ?? '')
+    setName(user.name ?? '')
+    setEmail(user.email ?? '')
+    setTelefone(user.telefone ?? '')
+    setNumero(user.numero ?? '')
+    setPosicao(user.posicao ?? '')
+    setPeso(user.peso ?? '')
+    setAltura(user.altura ?? '')
+    setNascimento(user.nascimento ?? '')
+    setPlan(planMock)
+    setEdited(false)
   }, [])
 
-  async function loadUser() {
-    try {
-      const data = await AsyncStorage.getItem('user')
+  useEffect(() => { loadUser() }, [loadUser])
 
-      if (data) {
-        const user = JSON.parse(data)
-
-        setAvatar(user.avatar ?? userMock.avatar)
-        setName(user.name ?? userMock.name)
-        setEmail(user.email ?? userMock.email)
-        setTelefone(user.telefone ?? userMock.telefone)
-      }
-    } catch (e) {
-      console.log('Erro ao carregar usuário')
-    }
+  function handleChange(setter) {
+    return (val) => { setter(val); setEdited(true) }
   }
 
-  async function saveUser(updatedFields) {
-    try {
-      const existing = await AsyncStorage.getItem('user')
-      const currentData = existing ? JSON.parse(existing) : {}
+  function handlePosicao(p) {
+    setPosicao(p)
+    setEdited(true)
+  }
 
-      const newData = {
-        ...currentData,
-        ...updatedFields,
-      }
-
-      await AsyncStorage.setItem('user', JSON.stringify(newData))
-    } catch (e) {
-      console.log('Erro ao salvar usuário')
+  async function handleSave() {
+    if (!name.trim() || !email.trim()) {
+      Alert.alert('Atenção', 'Nome e e-mail são obrigatórios.')
+      return
     }
+    setSaving(true)
+    const stored = await getStoredUser()
+    const updated = {
+      ...(stored ?? userMock),
+      name, email, telefone, avatar,
+      numero, posicao, peso, altura, nascimento,
+    }
+    await AsyncStorage.setItem(USER_KEY, JSON.stringify(updated))
+    setSaving(false)
+    setEdited(false)
+    Alert.alert('Salvo', 'Perfil atualizado com sucesso.')
   }
 
   async function pickImage() {
-    const permission =
-      await ImagePicker.requestMediaLibraryPermissionsAsync()
-
-    if (!permission.granted) {
-      Alert.alert('Permissão negada', 'Precisamos acessar sua galeria')
-      return
-    }
-
-    const result = await ImagePicker.launchImageLibraryAsync({
-      mediaTypes: ImagePicker.MediaTypeOptions.Images,
-      allowsEditing: true,
-      quality: 1,
-    })
-
-    if (!result.canceled) {
-      const uri = result.assets[0].uri
-
-      setAvatar(uri)
-      saveUser({ avatar: uri })
-    }
+    const { granted } = await ImagePicker.requestMediaLibraryPermissionsAsync()
+    if (!granted) { Alert.alert('Permissão negada', 'Precisamos acessar sua galeria.'); return }
+    const result = await ImagePicker.launchImageLibraryAsync({ allowsEditing: true, quality: 0.8 })
+    if (!result.canceled) { setAvatar(result.assets[0].uri); setEdited(true) }
   }
 
   async function takePhoto() {
-    const permission =
-      await ImagePicker.requestCameraPermissionsAsync()
+    const { granted } = await ImagePicker.requestCameraPermissionsAsync()
+    if (!granted) { Alert.alert('Permissão negada', 'Precisamos da câmera.'); return }
+    const result = await ImagePicker.launchCameraAsync({ allowsEditing: true, quality: 0.8 })
+    if (!result.canceled) { setAvatar(result.assets[0].uri); setEdited(true) }
+  }
 
-    if (!permission.granted) {
-      Alert.alert('Permissão negada', 'Precisamos da câmera')
-      return
-    }
-
-    const result = await ImagePicker.launchCameraAsync({
-      allowsEditing: true,
-      quality: 1,
-    })
-
-    if (!result.canceled) {
-      const uri = result.assets[0].uri
-
-      setAvatar(uri)
-      saveUser({ avatar: uri })
-    }
+  async function handleLogout() {
+    await logout()
+    router.replace('/auth/screens/LoginScreen')
   }
 
   return (
-    <View style={styles.container}>
-      <SafeAreaView edges={['top']} />
+    <SafeAreaView style={styles.container} edges={['top']}>
+      <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === 'ios' ? 'padding' : 'height'}>
+        <ScrollView contentContainerStyle={styles.scroll} showsVerticalScrollIndicator={false}>
 
-      <View style={styles.avatarContainer}>
-        <Image source={{ uri: avatar }} style={styles.avatar} />
+          <View style={styles.header}>
+            <Text style={styles.headerTitle}>Perfil</Text>
+          </View>
+          <View style={styles.avatarSection}>
+            <View style={styles.avatarWrapper}>
+              {avatar ? (
+                <Image source={{ uri: avatar }} style={styles.avatar} />
+              ) : (
+                <View style={[styles.avatar, styles.avatarPlaceholder]}>
+                  <Text style={styles.avatarInitial}>{name.charAt(0).toUpperCase()}</Text>
+                </View>
+              )}
+              {numero ? (
+                <View style={styles.numberBadge}>
+                  <Text style={styles.numberBadgeText}>#{numero}</Text>
+                </View>
+              ) : null}
+            </View>
+            <Text style={styles.avatarName}>{name}</Text>
+            {posicao ? <Text style={styles.avatarPosicao}>{posicao}</Text> : null}
+            <View style={styles.photoActions}>
+              <TouchableOpacity style={styles.photoBtn} onPress={pickImage}>
+                <Text style={styles.photoBtnText}>Galeria</Text>
+              </TouchableOpacity>
+              <TouchableOpacity style={styles.photoBtn} onPress={takePhoto}>
+                <Text style={styles.photoBtnText}>Câmera</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
 
-        <View style={styles.photoActions}>
-          <TouchableOpacity onPress={pickImage} style={styles.btnSmall}>
-            <Text style={styles.btnText}>Galeria</Text>
+          {(peso || altura || numero) ? (
+            <View style={styles.statsRow}>
+              {numero ? (
+                <View style={styles.statItem}>
+                  <Text style={styles.statVal}>#{numero}</Text>
+                  <Text style={styles.statLbl}>Camisa</Text>
+                </View>
+              ) : null}
+              {altura ? (
+                <View style={styles.statItem}>
+                  <Text style={styles.statVal}>{altura}m</Text>
+                  <Text style={styles.statLbl}>Altura</Text>
+                </View>
+              ) : null}
+              {peso ? (
+                <View style={styles.statItem}>
+                  <Text style={styles.statVal}>{peso} kg</Text>
+                  <Text style={styles.statLbl}>Peso</Text>
+                </View>
+              ) : null}
+            </View>
+          ) : null}
+
+          <View style={styles.section}>
+            <Text style={styles.sectionTitle}>Dados pessoais</Text>
+            <Field label="Nome" value={name} onChangeText={handleChange(setName)} />
+            <Field label="E-mail" value={email} onChangeText={handleChange(setEmail)} keyboardType="email-address" autoCapitalize="none" />
+            <Field label="Telefone" value={telefone} onChangeText={handleChange(setTelefone)} keyboardType="phone-pad" last />
+          </View>
+
+          <View style={styles.section}>
+            <Text style={styles.sectionTitle}>Dados do atleta</Text>
+
+            <Field label="Número da camisa" value={numero} onChangeText={handleChange(setNumero)} keyboardType="numeric" />
+
+            <View style={styles.field}>
+              <Text style={styles.fieldLabel}>Peso</Text>
+              <View style={styles.fieldRow}>
+                <TextInput
+                  style={[styles.fieldInput, { flex: 1 }]}
+                  value={peso}
+                  onChangeText={handleChange(setPeso)}
+                  keyboardType="numeric"
+                  placeholderTextColor="#555"
+                  placeholder="0"
+                />
+                <Text style={styles.fieldUnit}>kg</Text>
+              </View>
+            </View>
+            <View style={styles.divider} />
+
+            <Field label="Altura (ex: 1,85)" value={altura} onChangeText={handleChange(setAltura)} keyboardType="decimal-pad" />
+
+            <View style={styles.field}>
+              <Text style={styles.fieldLabel}>Data de nascimento</Text>
+              <TextInput
+                style={styles.fieldInput}
+                value={nascimento}
+                onChangeText={(t) => { setNascimento(formatDate(t)); setEdited(true) }}
+                keyboardType="default"
+                placeholderTextColor="#555"
+                placeholder="DD/MM/AAAA"
+                maxLength={10}
+              />
+            </View>
+            <View style={styles.divider} />
+
+            <Text style={[styles.fieldLabel, { marginTop: 8, marginBottom: 10 }]}>Posição</Text>
+            <View style={styles.posicaoGrid}>
+              {POSICOES.map((p) => (
+                <TouchableOpacity
+                  key={p}
+                  style={[styles.posicaoChip, posicao === p && styles.posicaoChipActive]}
+                  onPress={() => handlePosicao(p)}
+                  accessibilityRole="radio"
+                  accessibilityState={{ checked: posicao === p }}
+                >
+                  <Text style={[styles.posicaoChipText, posicao === p && styles.posicaoChipTextActive]}>
+                    {p}
+                  </Text>
+                </TouchableOpacity>
+              ))}
+            </View>
+          </View>
+
+          {plan && (
+            <View style={styles.section}>
+              <Text style={styles.sectionTitle}>Plano</Text>
+              <View style={styles.planRow}>
+                <View style={styles.planBadge}>
+                  <Text style={styles.planBadgeText}>{plan.name}</Text>
+                </View>
+                <Text style={styles.planPrice}>{plan.price}/mês</Text>
+              </View>
+              <View style={styles.planDetail}>
+                <Text style={styles.planDetailLabel}>Vencimento</Text>
+                <Text style={styles.planDetailValue}>{plan.expires}</Text>
+              </View>
+            </View>
+          )}
+
+          <TouchableOpacity style={styles.logoutBtn} onPress={handleLogout}>
+            <Text style={styles.logoutText}>Sair da conta</Text>
           </TouchableOpacity>
 
-          <TouchableOpacity onPress={takePhoto} style={styles.btnSmall}>
-            <Text style={styles.btnText}>Câmera</Text>
+          <View style={{ height: 20 }} />
+        </ScrollView>
+
+        {edited && (
+          <TouchableOpacity
+            style={[styles.saveFloatBtn, saving && { opacity: 0.6 }]}
+            onPress={handleSave}
+            disabled={saving}
+            accessibilityRole="button"
+            accessibilityLabel="Salvar alterações do perfil"
+          >
+            <Text style={styles.saveFloatBtnText}>{saving ? 'Salvando...' : 'Salvar alterações'}</Text>
           </TouchableOpacity>
-        </View>
-      </View>
+        )}
 
-      <View style={styles.card}>
-        <Text style={styles.label}>Nome</Text>
-        <TextInput
-          value={name}
-          onChangeText={(text) => {
-            setName(text)
-            saveUser({ name: text })
-          }}
-          style={styles.input}
-        />
-
-        <Text style={styles.label}>Email</Text>
-        <TextInput
-          value={email}
-          onChangeText={(text) => {
-            setEmail(text)
-            saveUser({ email: text })
-          }}
-          style={styles.input}
-          keyboardType="email-address"
-        />
-
-        <Text style={styles.label}>Telefone</Text>
-        <TextInput
-          value={telefone}
-          onChangeText={(text) => {
-            setTelefone(text)
-            saveUser({ telefone: text })
-          }}
-          style={styles.input}
-        />
-      </View>
-
-      <View style={styles.planCard}>
-        <Text style={styles.planTitle}>Plano atual</Text>
-
-        <Text style={styles.planText}>Nome: {plan.name}</Text>
-        <Text style={styles.planText}>Preço: {plan.price}</Text>
-        <Text style={styles.planText}>Vencimento: {plan.expires}</Text>
-      </View>
-
-      <TouchableOpacity
-        style={styles.logoutButton}
-        onPress={async () => {
-          await logout()
-          router.replace('/auth/screens/LoginScreen')
-        }}
-      >
-        <Text style={styles.logoutText}>Sair da conta</Text>
-      </TouchableOpacity>
-
+      </KeyboardAvoidingView>
       <BottomMenu />
-    </View>
+    </SafeAreaView>
+  )
+}
+
+function Field({ label, value, onChangeText, last, ...props }) {
+  return (
+    <>
+      <View style={styles.field}>
+        <Text style={styles.fieldLabel}>{label}</Text>
+        <TextInput
+          style={styles.fieldInput}
+          value={value}
+          onChangeText={onChangeText}
+          placeholderTextColor="#555"
+          {...props}
+        />
+      </View>
+      {!last && <View style={styles.divider} />}
+    </>
   )
 }
 
 const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    backgroundColor: '#1f1f1f',
-    paddingHorizontal: 20,
-  },
+  container: { flex: 1, backgroundColor: '#111' },
+  scroll: { paddingHorizontal: 20, paddingTop: 16 },
 
-  avatarContainer: {
-    alignItems: 'center',
-    marginTop: 20,
-  },
+  header: { marginBottom: 24 },
+  headerTitle: { fontSize: 24, fontWeight: 'bold', color: '#fff' },
 
-  avatar: {
-    width: 120,
-    height: 120,
-    borderRadius: 60,
-    borderWidth: 2,
-    borderColor: '#fff',
+  avatarSection: { alignItems: 'center', marginBottom: 20 },
+  avatarWrapper: { position: 'relative', marginBottom: 10 },
+  avatar: { width: 100, height: 100, borderRadius: 50 },
+  avatarPlaceholder: { backgroundColor: '#222', alignItems: 'center', justifyContent: 'center', borderWidth: 2, borderColor: '#FFD600' },
+  avatarInitial: { fontSize: 36, fontWeight: 'bold', color: '#FFD600' },
+  numberBadge: {
+    position: 'absolute', bottom: 0, right: -4,
+    backgroundColor: '#FFD600', borderRadius: 10,
+    paddingHorizontal: 6, paddingVertical: 2,
   },
+  numberBadgeText: { color: '#000', fontWeight: 'bold', fontSize: 11 },
+  avatarName: { fontSize: 18, fontWeight: 'bold', color: '#fff', marginBottom: 2 },
+  avatarPosicao: { fontSize: 13, color: '#FFD600', marginBottom: 12 },
+  photoActions: { flexDirection: 'row', gap: 10 },
+  photoBtn: { borderWidth: 1, borderColor: '#333', borderRadius: 8, paddingHorizontal: 16, paddingVertical: 8 },
+  photoBtnText: { color: '#aaa', fontSize: 13 },
 
-  photoActions: {
-    flexDirection: 'row',
-    marginTop: 10,
-    gap: 10,
+  statsRow: {
+    flexDirection: 'row', backgroundColor: '#1e1e1e',
+    borderRadius: 14, marginBottom: 16, overflow: 'hidden',
   },
+  statItem: { flex: 1, alignItems: 'center', paddingVertical: 14, borderRightWidth: 1, borderRightColor: '#2a2a2a' },
+  statVal: { fontSize: 18, fontWeight: 'bold', color: '#FFD600' },
+  statLbl: { fontSize: 11, color: '#666', marginTop: 2 },
 
-  btnSmall: {
-    backgroundColor: '#2A2A2A',
-    padding: 8,
-    borderRadius: 8,
-  },
+  section: { backgroundColor: '#1e1e1e', borderRadius: 14, padding: 16, marginBottom: 16 },
+  sectionTitle: { fontSize: 11, color: '#555', textTransform: 'uppercase', letterSpacing: 1, marginBottom: 12 },
 
-  btnText: {
-    color: '#fff',
-    fontSize: 12,
-  },
+  field: { paddingVertical: 4 },
+  fieldLabel: { fontSize: 11, color: '#666', marginBottom: 4 },
+  fieldInput: { color: '#fff', fontSize: 15, paddingVertical: 4 },
+  fieldRow: { flexDirection: 'row', alignItems: 'center' },
+  fieldUnit: { color: '#555', fontSize: 15, marginLeft: 6 },
+  divider: { height: 1, backgroundColor: '#2a2a2a', marginVertical: 8 },
 
-  card: {
-    backgroundColor: '#2A2A2A',
-    padding: 15,
-    borderRadius: 15,
-    marginTop: 20,
-  },
+  posicaoGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
+  posicaoChip: { borderWidth: 1, borderColor: '#333', borderRadius: 20, paddingHorizontal: 14, paddingVertical: 7 },
+  posicaoChipActive: { backgroundColor: '#FFD600', borderColor: '#FFD600' },
+  posicaoChipText: { color: '#666', fontSize: 13 },
+  posicaoChipTextActive: { color: '#000', fontWeight: 'bold' },
 
-  label: {
-    color: '#aaa',
-    fontSize: 12,
-    marginTop: 10,
-  },
+  planRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 12 },
+  planBadge: { backgroundColor: '#FFD600', borderRadius: 6, paddingHorizontal: 10, paddingVertical: 4 },
+  planBadgeText: { color: '#000', fontWeight: 'bold', fontSize: 13 },
+  planPrice: { color: '#fff', fontSize: 15, fontWeight: '600' },
+  planDetail: { flexDirection: 'row', justifyContent: 'space-between' },
+  planDetailLabel: { color: '#666', fontSize: 13 },
+  planDetailValue: { color: '#aaa', fontSize: 13 },
 
-  input: {
-    backgroundColor: '#1f1f1f',
-    color: '#fff',
-    padding: 10,
-    borderRadius: 8,
-    marginTop: 5,
+  saveFloatBtn: {
+    backgroundColor: '#FFD600', borderRadius: 12, marginHorizontal: 20,
+    paddingVertical: 16, alignItems: 'center', marginBottom: 12,
   },
+  saveFloatBtnText: { color: '#000', fontWeight: 'bold', fontSize: 16 },
 
-  planCard: {
-    backgroundColor: '#2A2A2A',
-    padding: 15,
-    borderRadius: 15,
-    marginTop: 20,
-  },
-
-  planTitle: {
-    color: '#fff',
-    fontSize: 16,
-    fontWeight: 'bold',
-    marginBottom: 10,
-  },
-
-  planText: {
-    color: '#ccc',
-    marginTop: 5,
-  },
-  logoutButton: {
-    backgroundColor: '#E53935',
-    padding: 15,
-    borderRadius: 12,
-    marginTop: 20,
-    alignItems: 'center',
-  },
-  logoutText: {
-    color: '#fff',
-    fontWeight: 'bold',
-    fontSize: 14,
-  },
+  logoutBtn: { borderWidth: 1, borderColor: '#ff4d4d', borderRadius: 12, paddingVertical: 14, alignItems: 'center' },
+  logoutText: { color: '#ff4d4d', fontWeight: 'bold', fontSize: 15 },
 })
