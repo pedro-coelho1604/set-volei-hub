@@ -18,7 +18,7 @@ export default function BottomMenu() {
           <Text style={styles.text}>Mapa</Text>
         </TouchableOpacity>
 
-        <TouchableOpacity onPress={() => router.push("/profile")}>
+        <TouchableOpacity onPress={() => router.push("/perfil")}>
           <Ionicons name="person" size={24} color="#fff" />
           <Text style={styles.text}>Perfil</Text>
         </TouchableOpacity>
