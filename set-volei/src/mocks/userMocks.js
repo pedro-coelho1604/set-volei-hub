@@ -21,14 +21,7 @@ export const championshipsMock = [
     date: 'Julho 2026',
     location: 'Vassouras, RJ',
     icon: '',
-  },
-  {
-    id: '2',
-    name: 'Copa Set Vôlei',
-    date: 'Setembro 2026',
-    location: 'Rio de Janeiro, RJ',
-    icon: '',
-  },
+  }
 ]
 
 
