@@ -13,6 +13,7 @@ import * as ImagePicker from 'expo-image-picker'
 import BottomMenu from '../../components/BottomMenu'
 import { useRouter } from 'expo-router'
 import { userMock, planMock } from '../../mocks/userMocks'
+import { logout } from '../auth/storage/authStorage'
 
 export default function Perfil() {
   const router = useRouter()
@@ -123,7 +124,10 @@ export default function Perfil() {
 
         <TouchableOpacity
           style={styles.logoutButton}
-          onPress={() => router.replace('/login')}>
+          onPress={async () => {
+            await logout()
+            router.replace('/auth/screens/LoginScreen')
+          }}>
           <Text style={styles.logoutText}>Sair da conta</Text>
         </TouchableOpacity>
 
