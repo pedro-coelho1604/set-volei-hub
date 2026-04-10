@@ -1,13 +1,14 @@
-import { View, Text, StyleSheet } from "react-native"
-import BottomMenu from "../../components/BottomMenu"
+import { View, Text, StyleSheet } from 'react-native'
+import { SafeAreaView } from 'react-native-safe-area-context'
+import BottomMenu from '../../components/BottomMenu'
 
 export default function Home() {
   return (
-    <View style={styles.container}>
+    <SafeAreaView style={styles.container} edges={['top']}>      
       <Text>Home</Text>
 
       <BottomMenu />
-    </View>
+    </SafeAreaView>
   )
 }
 
