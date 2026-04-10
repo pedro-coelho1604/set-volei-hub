@@ -12,20 +12,17 @@ import { useState } from 'react'
 import * as ImagePicker from 'expo-image-picker'
 import BottomMenu from '../../components/BottomMenu'
 import { useRouter } from 'expo-router'
+import { userMock, planMock } from '../../mocks/userMocks'
 
 export default function Perfil() {
   const router = useRouter()
-  const [avatar, setAvatar] = useState('https://i.pravatar.cc/300')
+  const [avatar, setAvatar] = useState(userMock.avatar)
 
-  const [name, setName] = useState('Pedro Coelho')
-  const [email, setEmail] = useState('pedro@email.com')
-  const [telefone, setTelefone] = useState('123456789')
+  const [name, setName] = useState(userMock.name)
+  const [email, setEmail] = useState(userMock.email)
+  const [telefone, setTelefone] = useState(userMock.telefone)
 
-  const plan = {
-    name: 'Premium',
-    price: 'R$ 29,90/mês',
-    expires: '10/05/2026',
-  }
+  const plan = planMock;
 
   async function pickImage() {
     const permission =
