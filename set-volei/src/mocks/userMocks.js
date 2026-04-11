@@ -2,6 +2,7 @@ export const userMock = {
     avatar: 'https://i.pravatar.cc/300',
     name:  'Pedro Coelho',
     email: 'pedrocoelho@gmail.com',
+    password: '123',
     telefone: '123456789'
 }
 
