@@ -26,7 +26,7 @@ export default function SplashScreenView() {
   return (
     <View style={styles.container}>
       <Animated.View style={{ opacity, transform: [{ scale }], alignItems: 'center', gap: 24 }}>
-        <View style={styles.iconWrapper}>
+        <View >
           <Image
             source={require('../../assets/set_icon.png')}
             style={styles.icon}
