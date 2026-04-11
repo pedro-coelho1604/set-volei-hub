@@ -82,19 +82,73 @@ export default function Perfil() {
     Alert.alert('Salvo', 'Perfil atualizado com sucesso.')
   }
 
-  async function pickImage() {
-    const { granted } = await ImagePicker.requestMediaLibraryPermissionsAsync()
-    if (!granted) { Alert.alert('Permissão negada', 'Precisamos acessar sua galeria.'); return }
-    const result = await ImagePicker.launchImageLibraryAsync({ allowsEditing: true, quality: 0.8 })
-    if (!result.canceled) { setAvatar(result.assets[0].uri); setEdited(true) }
+async function pickImage() {
+  const { granted } = await ImagePicker.requestMediaLibraryPermissionsAsync()
+
+  if (!granted) {
+    Alert.alert('Permissão negada', 'Precisamos acessar sua galeria.')
+    return
   }
 
-  async function takePhoto() {
-    const { granted } = await ImagePicker.requestCameraPermissionsAsync()
-    if (!granted) { Alert.alert('Permissão negada', 'Precisamos da câmera.'); return }
-    const result = await ImagePicker.launchCameraAsync({ allowsEditing: true, quality: 0.8 })
-    if (!result.canceled) { setAvatar(result.assets[0].uri); setEdited(true) }
+  const result = await ImagePicker.launchImageLibraryAsync({
+    allowsEditing: true,
+    quality: 0.8,
+  })
+
+  if (!result.canceled) {
+    const uri = result.assets[0].uri
+
+    setAvatar(uri)
+    setEdited(true)
+
+    try {
+      const stored = await getStoredUser()
+
+      const updatedUser = {
+        ...(stored ?? userMock),
+        avatar: uri,
+      }
+
+      await AsyncStorage.setItem(USER_KEY, JSON.stringify(updatedUser))
+    } catch (e) {
+      console.log('Erro ao salvar avatar')
+    }
   }
+}
+
+async function takePhoto() {
+  const { granted } = await ImagePicker.requestCameraPermissionsAsync()
+
+  if (!granted) {
+    Alert.alert('Permissão negada', 'Precisamos da câmera.')
+    return
+  }
+
+  const result = await ImagePicker.launchCameraAsync({
+    allowsEditing: true,
+    quality: 0.8,
+  })
+
+  if (!result.canceled) {
+    const uri = result.assets[0].uri
+
+    setAvatar(uri)
+    setEdited(true)
+
+    try {
+      const stored = await getStoredUser()
+
+      const updatedUser = {
+        ...(stored ?? userMock),
+        avatar: uri,
+      }
+
+      await AsyncStorage.setItem(USER_KEY, JSON.stringify(updatedUser))
+    } catch (e) {
+      console.log('Erro ao salvar avatar')
+    }
+  }
+}
 
   async function handleLogout() {
     await logout()
@@ -104,7 +158,7 @@ export default function Perfil() {
   return (
     <SafeAreaView style={styles.container} edges={['top']}>
       <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === 'ios' ? 'padding' : 'height'}>
-        <ScrollView contentContainerStyle={styles.scroll} showsVerticalScrollIndicator={false}>
+        <ScrollView contentContainerStyle={styles.scroll} showsVerticalScrollIndicator={false} contentInsetAdjustmentBehavior="automatic">
 
           <View style={styles.header}>
             <Text style={styles.headerTitle}>Perfil</Text>
@@ -282,7 +336,7 @@ function Field({ label, value, onChangeText, last, ...props }) {
 
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: '#111' },
-  scroll: { paddingHorizontal: 20, paddingTop: 16 },
+  scroll: { paddingHorizontal: 20, paddingTop: 16, paddingBottom: 120 },
 
   header: { marginBottom: 24 },
   headerTitle: { fontSize: 24, fontWeight: 'bold', color: '#fff' },
