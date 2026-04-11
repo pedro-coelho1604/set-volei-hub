@@ -8,15 +8,16 @@ export default function BottomMenu() {
   return (
     <View style={styles.wrapper}>
       <View style={styles.container}>
+        <TouchableOpacity onPress={() => router.push("/mapa")}>
+          <Ionicons name="map" size={24} color="#fff" />
+          <Text style={styles.text}>Mapa</Text>
+        </TouchableOpacity>
+
         <TouchableOpacity onPress={() => router.push("/")}>
           <Ionicons name="home" size={24} color="#fff" />
           <Text style={styles.text}>Home</Text>
         </TouchableOpacity>
 
-        <TouchableOpacity onPress={() => router.push("/mapa")}>
-          <Ionicons name="map" size={24} color="#fff" />
-          <Text style={styles.text}>Mapa</Text>
-        </TouchableOpacity>
 
         <TouchableOpacity onPress={() => router.push("/perfil")}>
           <Ionicons name="person" size={24} color="#fff" />

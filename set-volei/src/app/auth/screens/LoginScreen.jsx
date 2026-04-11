@@ -8,7 +8,8 @@ import {
   ActivityIndicator,
   KeyboardAvoidingView,
   Platform,
-} from 'react-native'import { useRouter } from 'expo-router'
+} from 'react-native'
+import { useRouter } from 'expo-router'
 import { login } from '../storage/authStorage'
 
 export default function LoginScreen() {
