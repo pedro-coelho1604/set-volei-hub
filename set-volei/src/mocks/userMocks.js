@@ -12,7 +12,11 @@ export const planMock = {
   expires: '10/05/2026',
 }
 
-export const trainingDaysMock = [2, 4]
+export function getTrainingDays() {
+  const todayDow = new Date().getDay()
+  const base = [2, 4]
+  return base.includes(todayDow) ? base : [...base, todayDow]
+}
 
 export const championshipsMock = [
   {
@@ -20,7 +24,6 @@ export const championshipsMock = [
     name: 'Gigantes da Rede',
     date: 'Julho 2026',
     location: 'Vassouras, RJ',
-    icon: '',
   }
 ]
 
