@@ -85,8 +85,6 @@ export default function LoginScreen() {
           </TouchableOpacity>
         </View>
 
-
-
       </View>
     </KeyboardAvoidingView>
   )
@@ -159,5 +157,4 @@ const styles = StyleSheet.create({
     fontWeight: 'bold',
     fontSize: 16,
   },
-
 })
