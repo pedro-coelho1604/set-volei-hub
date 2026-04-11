@@ -8,10 +8,11 @@ import {
   Alert,
 } from 'react-native'
 import { SafeAreaView } from 'react-native-safe-area-context'
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import * as ImagePicker from 'expo-image-picker'
 import BottomMenu from '../../components/BottomMenu'
 import { useRouter } from 'expo-router'
+import AsyncStorage from '@react-native-async-storage/async-storage'
 import { userMock, planMock } from '../../mocks/userMocks'
 import { logout } from '../auth/storage/authStorage'
 
@@ -23,7 +24,44 @@ export default function Perfil() {
   const [email, setEmail] = useState(userMock.email)
   const [telefone, setTelefone] = useState(userMock.telefone)
 
-  const plan = planMock;
+  const plan = planMock
+
+  useEffect(() => {
+    loadUser()
+  }, [])
+
+  async function loadUser() {
+    try {
+      const data = await AsyncStorage.getItem('user')
+
+      if (data) {
+        const user = JSON.parse(data)
+
+        setAvatar(user.avatar ?? userMock.avatar)
+        setName(user.name ?? userMock.name)
+        setEmail(user.email ?? userMock.email)
+        setTelefone(user.telefone ?? userMock.telefone)
+      }
+    } catch (e) {
+      console.log('Erro ao carregar usuário')
+    }
+  }
+
+  async function saveUser(updatedFields) {
+    try {
+      const existing = await AsyncStorage.getItem('user')
+      const currentData = existing ? JSON.parse(existing) : {}
+
+      const newData = {
+        ...currentData,
+        ...updatedFields,
+      }
+
+      await AsyncStorage.setItem('user', JSON.stringify(newData))
+    } catch (e) {
+      console.log('Erro ao salvar usuário')
+    }
+  }
 
   async function pickImage() {
     const permission =
@@ -41,7 +79,10 @@ export default function Perfil() {
     })
 
     if (!result.canceled) {
-      setAvatar(result.assets[0].uri)
+      const uri = result.assets[0].uri
+
+      setAvatar(uri)
+      saveUser({ avatar: uri })
     }
   }
 
@@ -60,7 +101,10 @@ export default function Perfil() {
     })
 
     if (!result.canceled) {
-      setAvatar(result.assets[0].uri)
+      const uri = result.assets[0].uri
+
+      setAvatar(uri)
+      saveUser({ avatar: uri })
     }
   }
 
@@ -86,14 +130,20 @@ export default function Perfil() {
         <Text style={styles.label}>Nome</Text>
         <TextInput
           value={name}
-          onChangeText={setName}
+          onChangeText={(text) => {
+            setName(text)
+            saveUser({ name: text })
+          }}
           style={styles.input}
         />
 
         <Text style={styles.label}>Email</Text>
         <TextInput
           value={email}
-          onChangeText={setEmail}
+          onChangeText={(text) => {
+            setEmail(text)
+            saveUser({ email: text })
+          }}
           style={styles.input}
           keyboardType="email-address"
         />
@@ -101,7 +151,10 @@ export default function Perfil() {
         <Text style={styles.label}>Telefone</Text>
         <TextInput
           value={telefone}
-          onChangeText={setTelefone}
+          onChangeText={(text) => {
+            setTelefone(text)
+            saveUser({ telefone: text })
+          }}
           style={styles.input}
         />
       </View>
@@ -109,27 +162,20 @@ export default function Perfil() {
       <View style={styles.planCard}>
         <Text style={styles.planTitle}>Plano atual</Text>
 
-        <Text style={styles.planText}>
-          Nome: {plan.name}
-        </Text>
-
-        <Text style={styles.planText}>
-          Preço: {plan.price}
-        </Text>
-
-        <Text style={styles.planText}>
-          Vencimento: {plan.expires}
-        </Text>
+        <Text style={styles.planText}>Nome: {plan.name}</Text>
+        <Text style={styles.planText}>Preço: {plan.price}</Text>
+        <Text style={styles.planText}>Vencimento: {plan.expires}</Text>
       </View>
 
-        <TouchableOpacity
-          style={styles.logoutButton}
-          onPress={async () => {
-            await logout()
-            router.replace('/auth/screens/LoginScreen')
-          }}>
-          <Text style={styles.logoutText}>Sair da conta</Text>
-        </TouchableOpacity>
+      <TouchableOpacity
+        style={styles.logoutButton}
+        onPress={async () => {
+          await logout()
+          router.replace('/auth/screens/LoginScreen')
+        }}
+      >
+        <Text style={styles.logoutText}>Sair da conta</Text>
+      </TouchableOpacity>
 
       <BottomMenu />
     </View>
