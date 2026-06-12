@@ -163,6 +163,8 @@ export default function Mapa() {
         {unidades.map((unidade) => (
           <Marker
             key={unidade.id}
+            testID={`map-marker-${unidade.id}`}
+            accessibilityLabel={`Unidade ${unidade.nome}`}
             coordinate={{
               latitude: unidade.latitude,
               longitude: unidade.longitude,
@@ -173,6 +175,9 @@ export default function Mapa() {
       </MapView>
 
       <TouchableOpacity
+        testID="map-locate-button"
+        accessibilityRole="button"
+        accessibilityLabel="Centralizar no usuário"
         style={[
           styles.locateButton,
           !location && styles.locateButtonDisabled,
@@ -189,7 +194,7 @@ export default function Mapa() {
       </TouchableOpacity>
 
       {selectedUnit && (
-        <View style={styles.card}>
+        <View testID="map-unit-card" style={styles.card}>
         <Image source={selectedUnit.imagem} style={styles.cardImage} />
 
           <View style={styles.cardContent}>
@@ -198,6 +203,9 @@ export default function Mapa() {
             <Text style={styles.cardText}>{selectedUnit.telefone}</Text>    
 
             <TouchableOpacity
+              testID="map-card-close"
+              accessibilityRole="button"
+              accessibilityLabel="Fechar card da unidade"
               style={styles.closeButton}
               onPress={() => setSelectedUnit(null)}
             >

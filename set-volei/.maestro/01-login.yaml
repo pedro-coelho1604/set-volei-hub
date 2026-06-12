@@ -1,0 +1,30 @@
+# ==================================================================
+# Flow 01 — Login
+#
+# Launches the app from a clean state, signs in with the seeded mock
+# user and asserts the Home screen greeting is shown.
+#
+# Selectors use testID (set via accessibilityLabel/testID in the
+# components) as the primary selector. Visible text is only asserted
+# as the end-state check.
+# ==================================================================
+appId: ${APP_ID}
+env:
+  EMAIL: "pedrocoelho@gmail.com"
+  PASSWORD: "123"
+---
+- launchApp:
+    clearState: true
+
+# Perform the shared login steps.
+- runFlow:
+    file: subflows/login.yaml
+
+# We should land on the Home tab — greeting + weekly section are visible.
+- extendedWaitUntil:
+    visible:
+      id: "home-avatar-button"
+    timeout: 15000
+- assertVisible: "Treinos da semana"
+- assertVisible:
+    text: "Olá,.*"

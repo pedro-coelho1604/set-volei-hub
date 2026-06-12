@@ -149,7 +149,12 @@ export default function Home() {
               {DAY_LABELS[today.getDay()]}, {today.getDate()} de {MONTH_NAMES[today.getMonth()]}
             </Text>
           </View>
-          <TouchableOpacity onPress={() => router.push('/perfil')}>
+          <TouchableOpacity
+            testID="home-avatar-button"
+            accessibilityRole="button"
+            accessibilityLabel="Ir para o perfil"
+            onPress={() => router.push('/perfil')}
+          >
             <Image source={{ uri: user?.avatar ?? userMock.avatar }} style={styles.avatar} />
           </TouchableOpacity>
         </View>
@@ -205,6 +210,8 @@ export default function Home() {
             return (
               <TouchableOpacity
                 key={dateStr}
+                testID={isToday ? 'home-day-today' : `home-day-${dateStr}`}
+                accessibilityLabel={`Dia ${DAY_LABELS[day.getDay()]} ${day.getDate()}`}
                 activeOpacity={isTraining ? 0.7 : 1}
                 onPress={() => isTraining && openDay(day)}
                 style={[
@@ -322,6 +329,9 @@ export default function Home() {
                       {!status && selectedDay.isToday && (
                         <View style={styles.modalActions}>
                           <TouchableOpacity
+                            testID="home-checkin-button"
+                            accessibilityRole="button"
+                            accessibilityLabel="Fazer check-in"
                             style={[styles.btnCheckin, justifyText.trim() && { opacity: 0.3 }]}
                             onPress={() => handleCheckin(selectedDay.dateStr)}
                             disabled={!!loadingCheckin || !!justifyText.trim()}
@@ -333,6 +343,8 @@ export default function Home() {
 
                           <Text style={styles.justifTitle}>Justificar falta</Text>
                           <TextInput
+                            testID="home-justify-input"
+                            accessibilityLabel="Motivo da falta"
                             style={styles.justifInput}
                             placeholder="Motivo da falta..."
                             placeholderTextColor="#555"
@@ -350,6 +362,9 @@ export default function Home() {
                                 <Text style={styles.btnCancelJustifText}>Cancelar</Text>
                               </TouchableOpacity>
                               <TouchableOpacity
+                                testID="home-justify-submit"
+                                accessibilityRole="button"
+                                accessibilityLabel="Enviar justificativa"
                                 style={[styles.btnJustify, { flex: 1 }]}
                                 onPress={handleJustify}
                                 disabled={justifyLoading}

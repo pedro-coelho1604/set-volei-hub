@@ -1,0 +1,14 @@
+# Maestro workspace config.
+# When running the whole folder (`maestro test .maestro/`) only the numbered
+# flows at the top level are executed. The `subflows/` directory holds shared
+# building blocks that are pulled in via `runFlow:` and must NOT run on their own.
+flows:
+  - "*.yaml"
+
+# Run order / grouping when executing the suite.
+executionOrder:
+  flowsOrder:
+    - "01-login"
+    - "02-checkin"
+    - "03-edit-profile"
+    - "04-logout"
