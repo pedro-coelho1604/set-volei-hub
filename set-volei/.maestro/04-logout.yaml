@@ -1,0 +1,39 @@
+# ==================================================================
+# Flow 04 — Logout
+#
+# Signs in, navigates to the Perfil tab and logs out. Asserts the app
+# returns to the login screen (e-mail field visible again).
+# ==================================================================
+appId: ${APP_ID}
+env:
+  EMAIL: "pedrocoelho@gmail.com"
+  PASSWORD: "123"
+---
+- launchApp:
+    clearState: true
+
+- runFlow:
+    file: subflows/login.yaml
+
+# Go to Perfil.
+- extendedWaitUntil:
+    visible:
+      id: "tab-perfil"
+    timeout: 15000
+- tapOn:
+    id: "tab-perfil"
+
+# Scroll to the logout button (it sits at the bottom of the form) and tap.
+- scrollUntilVisible:
+    element:
+      id: "perfil-logout-button"
+    direction: DOWN
+- tapOn:
+    id: "perfil-logout-button"
+
+# Back on the login screen.
+- extendedWaitUntil:
+    visible:
+      id: "login-email-input"
+    timeout: 15000
+- assertVisible: "Acesse sua conta"

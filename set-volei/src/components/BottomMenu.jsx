@@ -20,6 +20,9 @@ export default function BottomMenu() {
           return (
             <TouchableOpacity
               key={route}
+              testID={`tab-${label.toLowerCase()}`}
+              accessibilityRole="button"
+              accessibilityLabel={`Aba ${label}`}
               style={styles.tab}
               onPress={() => router.push(route)}
             >

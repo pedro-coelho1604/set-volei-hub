@@ -50,6 +50,8 @@ export default function LoginScreen() {
 
         <View style={styles.form}>
           <TextInput
+            testID="login-email-input"
+            accessibilityLabel="Campo de e-mail"
             style={styles.input}
             placeholder="E-mail"
             placeholderTextColor="#555"
@@ -60,6 +62,8 @@ export default function LoginScreen() {
           />
 
           <TextInput
+            testID="login-password-input"
+            accessibilityLabel="Campo de senha"
             style={styles.input}
             placeholder="Senha"
             placeholderTextColor="#555"
@@ -68,9 +72,12 @@ export default function LoginScreen() {
             onChangeText={setPassword}
           />
 
-          {error ? <Text style={styles.error}>{error}</Text> : null}
+          {error ? (
+            <Text testID="login-error" style={styles.error}>{error}</Text>
+          ) : null}
 
           <TouchableOpacity
+            testID="login-submit-button"
             style={styles.button}
             onPress={handleLogin}
             disabled={loading}

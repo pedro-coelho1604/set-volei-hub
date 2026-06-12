@@ -1,0 +1,42 @@
+# ==================================================================
+# Flow 03 — Edit profile
+#
+# Signs in, navigates to the Perfil tab, changes the name field and
+# saves. The floating "Salvar" button only appears after an edit, and
+# a success Alert ("Salvo") confirms the save.
+# ==================================================================
+appId: ${APP_ID}
+env:
+  EMAIL: "pedrocoelho@gmail.com"
+  PASSWORD: "123"
+  NEW_NAME: "Pedro Coelho Jr"
+---
+- launchApp:
+    clearState: true
+
+- runFlow:
+    file: subflows/login.yaml
+
+# Go to the Perfil tab from the bottom menu.
+- extendedWaitUntil:
+    visible:
+      id: "tab-perfil"
+    timeout: 15000
+- tapOn:
+    id: "tab-perfil"
+
+# Replace the name. `erase` clears the existing value first.
+- tapOn:
+    id: "perfil-name-input"
+- eraseText
+- inputText: ${NEW_NAME}
+- hideKeyboard
+
+# The save button is revealed only after an edit.
+- tapOn:
+    id: "perfil-save-button"
+
+# Success Alert from the app.
+- assertVisible: "Salvo"
+- assertVisible: "Perfil atualizado com sucesso."
+- tapOn: "OK"

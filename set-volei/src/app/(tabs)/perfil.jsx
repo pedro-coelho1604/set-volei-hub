@@ -215,7 +215,7 @@ async function takePhoto() {
 
           <View style={styles.section}>
             <Text style={styles.sectionTitle}>Dados pessoais</Text>
-            <Field label="Nome" value={name} onChangeText={handleChange(setName)} />
+            <Field label="Nome" value={name} onChangeText={handleChange(setName)} testID="perfil-name-input" accessibilityLabel="Campo nome" />
             <Field label="E-mail" value={email} onChangeText={handleChange(setEmail)} keyboardType="email-address" autoCapitalize="none" />
             <Field label="Telefone" value={telefone} onChangeText={handleChange(setTelefone)} keyboardType="phone-pad" last />
           </View>
@@ -291,7 +291,13 @@ async function takePhoto() {
             </View>
           )}
 
-          <TouchableOpacity style={styles.logoutBtn} onPress={handleLogout}>
+          <TouchableOpacity
+            testID="perfil-logout-button"
+            accessibilityRole="button"
+            accessibilityLabel="Sair da conta"
+            style={styles.logoutBtn}
+            onPress={handleLogout}
+          >
             <Text style={styles.logoutText}>Sair da conta</Text>
           </TouchableOpacity>
 
@@ -300,6 +306,7 @@ async function takePhoto() {
 
         {edited && (
           <TouchableOpacity
+            testID="perfil-save-button"
             style={[styles.saveFloatBtn, saving && { opacity: 0.6 }]}
             onPress={handleSave}
             disabled={saving}

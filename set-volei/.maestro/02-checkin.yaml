@@ -1,0 +1,38 @@
+# ==================================================================
+# Flow 02 — Check-in on today's training
+#
+# Signs in, opens today's training day in the week strip and performs
+# a check-in, then asserts the presence is confirmed in the day modal.
+#
+# `clearState: true` guarantees today has no status yet, so the
+# "Fazer Check-in" button is shown (after a check-in the app shows the
+# cancel button instead).
+# ==================================================================
+appId: ${APP_ID}
+env:
+  EMAIL: "pedrocoelho@gmail.com"
+  PASSWORD: "123"
+---
+- launchApp:
+    clearState: true
+
+- runFlow:
+    file: subflows/login.yaml
+
+# Wait for Home, then open today's day (always a training day).
+- extendedWaitUntil:
+    visible:
+      id: "home-day-today"
+    timeout: 15000
+- tapOn:
+    id: "home-day-today"
+
+# The day modal opens with the check-in button.
+- tapOn:
+    id: "home-checkin-button"
+
+# Presence is confirmed.
+- assertVisible: "✓ Presença confirmada"
+
+# Close the modal.
+- tapOn: "Fechar"

@@ -1,0 +1,31 @@
+# ------------------------------------------------------------------
+# Reusable login sub-flow.
+#
+# Used by the other flows via `runFlow`. It assumes the app was JUST
+# launched (the animated splash screen is showing) and waits for the
+# login screen to appear before typing the seeded mock credentials.
+#
+# Credentials come from the seeded mock user (src/mocks/userMocks.js).
+# Override them per-run with:  maestro test -e EMAIL=... -e PASSWORD=...
+# ------------------------------------------------------------------
+appId: ${APP_ID}
+---
+# The splash screen routes to /auth after ~4s. Wait until the e-mail
+# field is actually on screen (generous timeout to cover the splash).
+- extendedWaitUntil:
+    visible:
+      id: "login-email-input"
+    timeout: 15000
+
+- tapOn:
+    id: "login-email-input"
+- inputText: ${EMAIL}
+
+- tapOn:
+    id: "login-password-input"
+- inputText: ${PASSWORD}
+
+- hideKeyboard
+
+- tapOn:
+    id: "login-submit-button"
