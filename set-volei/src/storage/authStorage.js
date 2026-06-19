@@ -79,6 +79,7 @@ function mapUserFromApi(user) {
     position: user.position,
     height_cm: user.height_cm,
     weight_kg: user.weight_kg,
+    credito_checkins: user.credito_checkins ?? userMock.credito_checkins ?? 8,
     nascimento: dateFromApi(user.birth_date),
     numero: String(user.shirt_number ?? ''),
     posicao: positionFromApi(user.position),
@@ -302,6 +303,10 @@ export async function fetchCurrentUser() {
   } catch {
     return getStoredUser()
   }
+}
+
+export async function getAuthToken() {
+  return getSavedToken()
 }
 
 export async function logout() {

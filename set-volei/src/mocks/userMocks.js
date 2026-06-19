@@ -9,6 +9,7 @@ export const userMock = {
   peso: '78',
   altura: '1,85',
   nascimento: '15/03/2000',
+  credito_checkins: 8,
 }
 
 export const planMock = {

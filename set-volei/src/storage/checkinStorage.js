@@ -1,44 +1,84 @@
-import AsyncStorage from '@react-native-async-storage/async-storage'
+import { getAuthToken } from './authStorage'
 
-const CHECKIN_KEY = '@set_volei:checkins'
-const JUSTIF_KEY = '@set_volei:justifications'
+const API_BASE_URL = 'https://set-volei-hub-api.onrender.com'
+const CHECKINS_URL = `${API_BASE_URL}/auth/me/checkins`
 
-export async function getCheckins() {
-  const raw = await AsyncStorage.getItem(CHECKIN_KEY)
-  return raw ? JSON.parse(raw) : {}
+function toDateStr(date) {
+  if (typeof date === 'string') return date
+  return date.toISOString().split('T')[0]
+}
+
+function normalizeCheckins(body) {
+  const items = Array.isArray(body) ? body : body?.checkins ?? body?.data ?? []
+
+  return items.reduce((acc, item) => {
+    const date = item.checkin_date ?? item.date ?? item.dia_checkin
+    if (date) acc[date] = 'present'
+    return acc
+  }, {})
+}
+
+async function request(url, options = {}) {
+  const token = await getAuthToken()
+  if (!token) throw new Error('Sessao expirada. Entre novamente.')
+
+  const response = await fetch(url, {
+    ...options,
+    headers: {
+      Accept: 'application/json',
+      'Content-Type': 'application/json',
+      Authorization: `bearer ${token}`,
+      ...options.headers,
+    },
+  })
+
+  const text = await response.text()
+  const body = text ? JSON.parse(text) : null
+
+  if (!response.ok) {
+    const detail = Array.isArray(body?.detail) ? body.detail[0]?.msg : body?.detail
+    throw new Error(detail || body?.message || 'Nao foi possivel concluir o check-in.')
+  }
+
+  return body
+}
+
+export async function getCheckins(dateFrom, dateTo) {
+  const params = new URLSearchParams()
+  if (dateFrom) params.set('date_from', toDateStr(dateFrom))
+  if (dateTo) params.set('date_to', toDateStr(dateTo))
+
+  try {
+    const suffix = params.toString() ? `?${params.toString()}` : ''
+    const body = await request(`${CHECKINS_URL}${suffix}`)
+    return {
+      checkins: normalizeCheckins(body),
+      credito_checkins: body?.credito_checkins,
+      loaded: true,
+    }
+  } catch (error) {
+    return {
+      checkins: {},
+      credito_checkins: undefined,
+      loaded: false,
+      error,
+    }
+  }
 }
 
 export async function doCheckin(dateStr) {
-  const checkins = await getCheckins()
-  checkins[dateStr] = 'present'
-  await AsyncStorage.setItem(CHECKIN_KEY, JSON.stringify(checkins))
-}
-
-export async function doJustify(dateStr, reason) {
-  const checkins = await getCheckins()
-  checkins[dateStr] = 'justified'
-  await AsyncStorage.setItem(CHECKIN_KEY, JSON.stringify(checkins))
-
-  const raw = await AsyncStorage.getItem(JUSTIF_KEY)
-  const justifs = raw ? JSON.parse(raw) : {}
-  justifs[dateStr] = reason
-  await AsyncStorage.setItem(JUSTIF_KEY, JSON.stringify(justifs))
-}
-
-export async function getJustifications() {
-  const raw = await AsyncStorage.getItem(JUSTIF_KEY)
-  return raw ? JSON.parse(raw) : {}
+  return request(CHECKINS_URL, {
+    method: 'POST',
+  })
 }
 
 export async function cancelEntry(dateStr) {
-  const checkins = await getCheckins()
-  delete checkins[dateStr]
-  await AsyncStorage.setItem(CHECKIN_KEY, JSON.stringify(checkins))
+  const params = new URLSearchParams()
+  if (dateStr) params.set('checkin_date', dateStr)
 
-  const raw = await AsyncStorage.getItem(JUSTIF_KEY)
-  const justifs = raw ? JSON.parse(raw) : {}
-  delete justifs[dateStr]
-  await AsyncStorage.setItem(JUSTIF_KEY, JSON.stringify(justifs))
+  return request(`${CHECKINS_URL}?${params.toString()}`, {
+    method: 'DELETE',
+  })
 }
 
 export function countMonthPresent(checkins) {

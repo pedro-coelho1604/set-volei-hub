@@ -1,73 +1,96 @@
-/**
- * Unit tests — check-in storage layer.
- *
- * Covers `src/storage/checkinStorage.js`:
- *   - doCheckin marks a day as 'present'
- *   - doJustify marks a day as 'justified' and stores the reason
- *   - cancelEntry removes both the status and the justification
- *   - the getters return {} when nothing is stored yet
- *
- * AsyncStorage is mocked globally in jest.setup.js (in-memory + auto-cleared).
- */
+import * as SecureStore from 'expo-secure-store'
 import {
   getCheckins,
   doCheckin,
-  doJustify,
-  getJustifications,
   cancelEntry,
+  countMonthPresent,
 } from '../src/storage/checkinStorage'
 
-const DAY = '2026-06-11'
+const SECURE_TOKEN_KEY = 'set_volei_token'
+const DAY = '2026-06-19'
+const API_URL = 'https://set-volei-hub-api.onrender.com/auth/me/checkins'
+
+function jsonResponse(body, ok = true) {
+  return {
+    ok,
+    text: jest.fn(async () => JSON.stringify(body)),
+  }
+}
 
 describe('checkinStorage', () => {
-  it('starts empty', async () => {
-    await expect(getCheckins()).resolves.toEqual({})
-    await expect(getJustifications()).resolves.toEqual({})
+  beforeEach(async () => {
+    jest.clearAllMocks()
+    global.fetch = jest.fn()
+    await SecureStore.setItemAsync(SECURE_TOKEN_KEY, 'abc123')
   })
 
-  it('records a presence with doCheckin', async () => {
+  it('loads check-ins from the API as a date map', async () => {
+    global.fetch.mockResolvedValueOnce(jsonResponse({
+      checkins: [
+        { id: 1, user_id: 5, checkin_date: DAY, created_at: '2026-06-19T12:00:00Z' },
+      ],
+    }))
+
+    const checkins = await getCheckins('2026-06-15', '2026-06-21')
+
+    expect(checkins).toEqual({
+      checkins: { [DAY]: 'present' },
+      credito_checkins: undefined,
+      loaded: true,
+    })
+    expect(global.fetch).toHaveBeenCalledWith(
+      `${API_URL}?date_from=2026-06-15&date_to=2026-06-21`,
+      expect.objectContaining({
+        headers: expect.objectContaining({ Authorization: 'bearer abc123' }),
+      }),
+    )
+  })
+
+  it('returns an empty map when the API list is not available yet', async () => {
+    global.fetch.mockResolvedValueOnce(jsonResponse({ detail: 'Method Not Allowed' }, false))
+
+    await expect(getCheckins()).resolves.toEqual(expect.objectContaining({
+      checkins: {},
+      loaded: false,
+    }))
+  })
+
+  it('creates a check-in through the API', async () => {
+    global.fetch.mockResolvedValueOnce(jsonResponse({
+      message: 'Check-in criado',
+      credito_checkins: 7,
+      checkin: { id: 1, user_id: 5, checkin_date: DAY, created_at: '2026-06-19T12:00:00Z' },
+    }, true))
+
     await doCheckin(DAY)
 
-    const checkins = await getCheckins()
-    expect(checkins[DAY]).toBe('present')
+    expect(global.fetch).toHaveBeenCalledWith(
+      API_URL,
+      expect.objectContaining({ method: 'POST' }),
+    )
   })
 
-  it('records a justified absence with a reason', async () => {
-    await doJustify(DAY, 'Consulta médica')
+  it('cancels a check-in through the API', async () => {
+    global.fetch.mockResolvedValueOnce(jsonResponse({
+      message: 'Check-in cancelado',
+      credito_checkins: 8,
+      checkin: null,
+    }))
 
-    const checkins = await getCheckins()
-    const justifs = await getJustifications()
-
-    expect(checkins[DAY]).toBe('justified')
-    expect(justifs[DAY]).toBe('Consulta médica')
-  })
-
-  it('overwrites a previous status when justifying after a check-in', async () => {
-    await doCheckin(DAY)
-    await doJustify(DAY, 'Mudou de ideia')
-
-    const checkins = await getCheckins()
-    expect(checkins[DAY]).toBe('justified')
-  })
-
-  it('cancelEntry removes both the status and the justification', async () => {
-    await doJustify(DAY, 'Viagem')
     await cancelEntry(DAY)
 
-    const checkins = await getCheckins()
-    const justifs = await getJustifications()
-
-    expect(checkins[DAY]).toBeUndefined()
-    expect(justifs[DAY]).toBeUndefined()
+    expect(global.fetch).toHaveBeenCalledWith(
+      `${API_URL}?checkin_date=${DAY}`,
+      expect.objectContaining({ method: 'DELETE' }),
+    )
   })
 
-  it('keeps other days untouched when cancelling one entry', async () => {
-    await doCheckin('2026-06-09')
-    await doCheckin('2026-06-11')
-    await cancelEntry('2026-06-09')
-
-    const checkins = await getCheckins()
-    expect(checkins['2026-06-09']).toBeUndefined()
-    expect(checkins['2026-06-11']).toBe('present')
+  it('counts present check-ins in the current month', () => {
+    const prefix = new Date().toISOString().slice(0, 7)
+    expect(countMonthPresent({
+      [`${prefix}-01`]: 'present',
+      [`${prefix}-02`]: 'present',
+      '2020-01-01': 'present',
+    })).toBe(2)
   })
 })
