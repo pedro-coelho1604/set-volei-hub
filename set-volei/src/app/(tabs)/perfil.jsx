@@ -7,40 +7,38 @@ import { useState, useEffect, useCallback } from 'react'
 import * as ImagePicker from 'expo-image-picker'
 import BottomMenu from '../../components/BottomMenu'
 import { useRouter } from 'expo-router'
-import { getStoredUser, logout } from '../auth/storage/authStorage'
-import AsyncStorage from '@react-native-async-storage/async-storage'
+import { fetchCurrentUser, getStoredUser, logout, updateCurrentUser } from '../../storage/authStorage'
 import { userMock, planMock } from '../../mocks/userMocks'
 
-const USER_KEY = '@set_volei:user'
-const POSICOES = ['Levantador', 'Líbero', 'Ponteiro', 'Oposto', 'Central', 'Outro']
+const POSICOES = ['Levantador', 'Libero', 'Ponteiro', 'Oposto', 'Central']
 
 function formatDate(text) {
   const digits = text.replace(/\D/g, '').slice(0, 8)
   if (digits.length <= 2) return digits
-  if (digits.length <= 4) return `${digits.slice(0,2)}/${digits.slice(2)}`
-  return `${digits.slice(0,2)}/${digits.slice(2,4)}/${digits.slice(4)}`
+  if (digits.length <= 4) return `${digits.slice(0, 2)}/${digits.slice(2)}`
+  return `${digits.slice(0, 2)}/${digits.slice(2, 4)}/${digits.slice(4)}`
 }
 
 export default function Perfil() {
   const router = useRouter()
 
-  const [avatar, setAvatar]         = useState('')
-  const [name, setName]             = useState('')
-  const [email, setEmail]           = useState('')
-  const [telefone, setTelefone]     = useState('')
-  const [numero, setNumero]         = useState('')
-  const [posicao, setPosicao]       = useState('')
-  const [peso, setPeso]             = useState('')
-  const [altura, setAltura]         = useState('')
+  const [avatar, setAvatar] = useState('')
+  const [avatarError, setAvatarError] = useState(false)
+  const [name, setName] = useState('')
+  const [email, setEmail] = useState('')
+  const [telefone, setTelefone] = useState('')
+  const [numero, setNumero] = useState('')
+  const [posicao, setPosicao] = useState('')
+  const [peso, setPeso] = useState('')
+  const [altura, setAltura] = useState('')
   const [nascimento, setNascimento] = useState('')
-  const [plan, setPlan]             = useState(null)
-  const [edited, setEdited]         = useState(false)
-  const [saving, setSaving]         = useState(false)
+  const [plan, setPlan] = useState(null)
+  const [edited, setEdited] = useState(false)
+  const [saving, setSaving] = useState(false)
 
-  const loadUser = useCallback(async () => {
-    const stored = await getStoredUser()
-    const user = stored ?? userMock
-    setAvatar(user.avatar ?? '')
+  const applyUser = useCallback((user) => {
+    setAvatar(user.avatar ?? user.profile_photo_url ?? '')
+    setAvatarError(false)
     setName(user.name ?? '')
     setEmail(user.email ?? '')
     setTelefone(user.telefone ?? '')
@@ -49,9 +47,15 @@ export default function Perfil() {
     setPeso(user.peso ?? '')
     setAltura(user.altura ?? '')
     setNascimento(user.nascimento ?? '')
+  }, [])
+
+  const loadUser = useCallback(async () => {
+    const current = await fetchCurrentUser()
+    const stored = current ?? await getStoredUser()
+    applyUser(stored ?? userMock)
     setPlan(planMock)
     setEdited(false)
-  }, [])
+  }, [applyUser])
 
   useEffect(() => { loadUser() }, [loadUser])
 
@@ -65,90 +69,76 @@ export default function Perfil() {
   }
 
   async function handleSave() {
-    if (!name.trim() || !email.trim()) {
-      Alert.alert('Atenção', 'Nome e e-mail são obrigatórios.')
+    if (!name.trim()) {
+      Alert.alert('Atencao', 'Nome e obrigatorio.')
       return
     }
+    if (avatar && !avatar.startsWith('http')) {
+      Alert.alert('Foto nao enviada', 'A API atual permite salvar apenas uma URL de foto. A imagem escolhida fica como previa local.')
+      return
+    }
+
     setSaving(true)
-    const stored = await getStoredUser()
-    const updated = {
-      ...(stored ?? userMock),
-      name, email, telefone, avatar,
-      numero, posicao, peso, altura, nascimento,
-    }
-    await AsyncStorage.setItem(USER_KEY, JSON.stringify(updated))
+    const result = await updateCurrentUser({
+      name,
+      numero,
+      posicao,
+      peso,
+      altura,
+      nascimento,
+      profile_photo_url: avatar?.startsWith('http') ? avatar : undefined,
+    })
     setSaving(false)
-    setEdited(false)
-    Alert.alert('Salvo', 'Perfil atualizado com sucesso.')
+
+    if (result.success) {
+      applyUser(result.user)
+      setEdited(false)
+      Alert.alert('Salvo', 'Perfil atualizado com sucesso.')
+      return
+    }
+
+    Alert.alert('Erro', result.error)
   }
 
-async function pickImage() {
-  const { granted } = await ImagePicker.requestMediaLibraryPermissionsAsync()
+  async function pickImage() {
+    const { granted } = await ImagePicker.requestMediaLibraryPermissionsAsync()
 
-  if (!granted) {
-    Alert.alert('Permissão negada', 'Precisamos acessar sua galeria.')
-    return
-  }
+    if (!granted) {
+      Alert.alert('Permissao negada', 'Precisamos acessar sua galeria.')
+      return
+    }
 
-  const result = await ImagePicker.launchImageLibraryAsync({
-    allowsEditing: true,
-    quality: 0.8,
-  })
+    const result = await ImagePicker.launchImageLibraryAsync({
+      allowsEditing: true,
+      quality: 0.8,
+    })
 
-  if (!result.canceled) {
-    const uri = result.assets[0].uri
-
-    setAvatar(uri)
-    setEdited(true)
-
-    try {
-      const stored = await getStoredUser()
-
-      const updatedUser = {
-        ...(stored ?? userMock),
-        avatar: uri,
-      }
-
-      await AsyncStorage.setItem(USER_KEY, JSON.stringify(updatedUser))
-    } catch (e) {
-      console.log('Erro ao salvar avatar')
+    if (!result.canceled) {
+      setAvatar(result.assets[0].uri)
+      setAvatarError(false)
+      setEdited(true)
     }
   }
-}
 
-async function takePhoto() {
-  const { granted } = await ImagePicker.requestCameraPermissionsAsync()
+  async function takePhoto() {
+    const { granted } = await ImagePicker.requestCameraPermissionsAsync()
 
-  if (!granted) {
-    Alert.alert('Permissão negada', 'Precisamos da câmera.')
-    return
-  }
+    if (!granted) {
+      Alert.alert('Permissao negada', 'Precisamos da camera.')
+      return
+    }
 
-  const result = await ImagePicker.launchCameraAsync({
-    allowsEditing: true,
-    quality: 0.8,
-  })
+    const result = await ImagePicker.launchCameraAsync({
+      allowsEditing: true,
+      quality: 0.8,
+    })
 
-  if (!result.canceled) {
-    const uri = result.assets[0].uri
-
-    setAvatar(uri)
-    setEdited(true)
-
-    try {
-      const stored = await getStoredUser()
-
-      const updatedUser = {
-        ...(stored ?? userMock),
-        avatar: uri,
-      }
-
-      await AsyncStorage.setItem(USER_KEY, JSON.stringify(updatedUser))
-    } catch (e) {
-      console.log('Erro ao salvar avatar')
+    if (!result.canceled) {
+      setAvatar(result.assets[0].uri)
+      setAvatarError(false)
+      setEdited(true)
     }
   }
-}
 
   async function handleLogout() {
     await logout()
@@ -165,8 +155,12 @@ async function takePhoto() {
           </View>
           <View style={styles.avatarSection}>
             <View style={styles.avatarWrapper}>
-              {avatar ? (
-                <Image source={{ uri: avatar }} style={styles.avatar} />
+              {avatar && !avatarError ? (
+                <Image
+                  source={{ uri: avatar }}
+                  style={styles.avatar}
+                  onError={() => setAvatarError(true)}
+                />
               ) : (
                 <View style={[styles.avatar, styles.avatarPlaceholder]}>
                   <Text style={styles.avatarInitial}>{name.charAt(0).toUpperCase()}</Text>
@@ -185,7 +179,7 @@ async function takePhoto() {
                 <Text style={styles.photoBtnText}>Galeria</Text>
               </TouchableOpacity>
               <TouchableOpacity style={styles.photoBtn} onPress={takePhoto}>
-                <Text style={styles.photoBtnText}>Câmera</Text>
+                <Text style={styles.photoBtnText}>Camera</Text>
               </TouchableOpacity>
             </View>
           </View>
@@ -216,14 +210,14 @@ async function takePhoto() {
           <View style={styles.section}>
             <Text style={styles.sectionTitle}>Dados pessoais</Text>
             <Field label="Nome" value={name} onChangeText={handleChange(setName)} testID="perfil-name-input" accessibilityLabel="Campo nome" />
-            <Field label="E-mail" value={email} onChangeText={handleChange(setEmail)} keyboardType="email-address" autoCapitalize="none" />
+            <Field label="E-mail" value={email} editable={false} keyboardType="email-address" autoCapitalize="none" />
             <Field label="Telefone" value={telefone} onChangeText={handleChange(setTelefone)} keyboardType="phone-pad" last />
           </View>
 
           <View style={styles.section}>
             <Text style={styles.sectionTitle}>Dados do atleta</Text>
 
-            <Field label="Número da camisa" value={numero} onChangeText={handleChange(setNumero)} keyboardType="numeric" />
+            <Field label="Numero da camisa" value={numero} onChangeText={handleChange(setNumero)} keyboardType="numeric" />
 
             <View style={styles.field}>
               <Text style={styles.fieldLabel}>Peso</Text>
@@ -257,14 +251,16 @@ async function takePhoto() {
             </View>
             <View style={styles.divider} />
 
-            <Text style={[styles.fieldLabel, { marginTop: 8, marginBottom: 10 }]}>Posição</Text>
+            <Text style={[styles.fieldLabel, { marginTop: 8, marginBottom: 10 }]}>Posicao</Text>
             <View style={styles.posicaoGrid}>
               {POSICOES.map((p) => (
                 <TouchableOpacity
                   key={p}
+                  testID={`perfil-position-${p.toLowerCase()}`}
                   style={[styles.posicaoChip, posicao === p && styles.posicaoChipActive]}
                   onPress={() => handlePosicao(p)}
                   accessibilityRole="radio"
+                  accessibilityLabel={`Selecionar posicao ${p}`}
                   accessibilityState={{ checked: posicao === p }}
                 >
                   <Text style={[styles.posicaoChipText, posicao === p && styles.posicaoChipTextActive]}>
@@ -282,7 +278,7 @@ async function takePhoto() {
                 <View style={styles.planBadge}>
                   <Text style={styles.planBadgeText}>{plan.name}</Text>
                 </View>
-                <Text style={styles.planPrice}>{plan.price}/mês</Text>
+                <Text style={styles.planPrice}>{plan.price}/mes</Text>
               </View>
               <View style={styles.planDetail}>
                 <Text style={styles.planDetailLabel}>Vencimento</Text>
@@ -304,35 +300,35 @@ async function takePhoto() {
           <View style={{ height: 20 }} />
         </ScrollView>
 
-        {edited && (
-          <TouchableOpacity
-            testID="perfil-save-button"
-            style={[styles.saveFloatBtn, saving && { opacity: 0.6 }]}
-            onPress={handleSave}
-            disabled={saving}
-            accessibilityRole="button"
-            accessibilityLabel="Salvar alterações do perfil"
-          >
-            <Text style={styles.saveFloatBtnText}>{saving ? 'Salvando...' : 'Salvar alterações'}</Text>
-          </TouchableOpacity>
-        )}
-
       </KeyboardAvoidingView>
+      {edited && (
+        <TouchableOpacity
+          testID="perfil-save-button"
+          style={[styles.saveFloatBtn, saving && { opacity: 0.6 }]}
+          onPress={handleSave}
+          disabled={saving}
+          accessibilityRole="button"
+          accessibilityLabel="Salvar alteracoes do perfil"
+        >
+          <Text style={styles.saveFloatBtnText}>{saving ? 'Salvando...' : 'Salvar alteracoes'}</Text>
+        </TouchableOpacity>
+      )}
       <BottomMenu />
     </SafeAreaView>
   )
 }
 
-function Field({ label, value, onChangeText, last, ...props }) {
+function Field({ label, value, onChangeText, last, editable = true, ...props }) {
   return (
     <>
       <View style={styles.field}>
         <Text style={styles.fieldLabel}>{label}</Text>
         <TextInput
-          style={styles.fieldInput}
+          style={[styles.fieldInput, !editable && styles.fieldInputDisabled]}
           value={value}
           onChangeText={onChangeText}
           placeholderTextColor="#555"
+          editable={editable}
           {...props}
         />
       </View>
@@ -379,6 +375,7 @@ const styles = StyleSheet.create({
   field: { paddingVertical: 4 },
   fieldLabel: { fontSize: 11, color: '#666', marginBottom: 4 },
   fieldInput: { color: '#fff', fontSize: 15, paddingVertical: 4 },
+  fieldInputDisabled: { color: '#777' },
   fieldRow: { flexDirection: 'row', alignItems: 'center' },
   fieldUnit: { color: '#555', fontSize: 15, marginLeft: 6 },
   divider: { height: 1, backgroundColor: '#2a2a2a', marginVertical: 8 },
@@ -398,8 +395,16 @@ const styles = StyleSheet.create({
   planDetailValue: { color: '#aaa', fontSize: 13 },
 
   saveFloatBtn: {
-    backgroundColor: '#FFD600', borderRadius: 12, marginHorizontal: 20,
-    paddingVertical: 16, alignItems: 'center', marginBottom: 12,
+    position: 'absolute',
+    left: 20,
+    right: 20,
+    bottom: 96,
+    zIndex: 20,
+    elevation: 20,
+    backgroundColor: '#FFD600',
+    borderRadius: 12,
+    paddingVertical: 16,
+    alignItems: 'center',
   },
   saveFloatBtnText: { color: '#000', fontWeight: 'bold', fontSize: 16 },
 

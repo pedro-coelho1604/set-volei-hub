@@ -1,7 +1,7 @@
 /**
  * Unit tests — check-in storage layer.
  *
- * Covers `src/app/home/storage/checkinStorage.js`:
+ * Covers `src/storage/checkinStorage.js`:
  *   - doCheckin marks a day as 'present'
  *   - doJustify marks a day as 'justified' and stores the reason
  *   - cancelEntry removes both the status and the justification
@@ -15,7 +15,7 @@ import {
   doJustify,
   getJustifications,
   cancelEntry,
-} from '../src/app/home/storage/checkinStorage'
+} from '../src/storage/checkinStorage'
 
 const DAY = '2026-06-11'
 

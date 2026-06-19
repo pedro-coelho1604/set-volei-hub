@@ -1,5 +1,5 @@
 export const userMock = {
-  avatar: 'https://i.pravatar.cc/300',
+  avatar: '',
   name: 'Pedro Coelho',
   email: 'pedrocoelho@gmail.com',
   password: '123',

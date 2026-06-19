@@ -8,11 +8,11 @@ import { SafeAreaView } from 'react-native-safe-area-context'
 import { useRouter } from 'expo-router'
 import BottomMenu from '../../components/BottomMenu'
 import { userMock, planMock, getTrainingDays, championshipsMock } from '../../mocks/userMocks'
-import { getStoredUser } from '../auth/storage/authStorage'
+import { getStoredUser } from '../../storage/authStorage'
 import {
   getCheckins, doCheckin, doJustify,
   getJustifications, countMonthPresent, cancelEntry,
-} from '../home/storage/checkinStorage'
+} from '../../storage/checkinStorage'
 
 const DAY_LABELS  = ['Dom','Seg','Ter','Qua','Qui','Sex','Sáb']
 const MONTH_NAMES = ['Jan','Fev','Mar','Abr','Mai','Jun','Jul','Ago','Set','Out','Nov','Dez']
@@ -155,7 +155,13 @@ export default function Home() {
             accessibilityLabel="Ir para o perfil"
             onPress={() => router.push('/perfil')}
           >
-            <Image source={{ uri: user?.avatar ?? userMock.avatar }} style={styles.avatar} />
+            {user?.avatar ? (
+              <Image source={{ uri: user.avatar }} style={styles.avatar} />
+            ) : (
+              <View style={[styles.avatar, styles.avatarPlaceholder]}>
+                <Text style={styles.avatarInitial}>{firstName.charAt(0).toUpperCase()}</Text>
+              </View>
+            )}
           </TouchableOpacity>
         </View>
 
@@ -418,6 +424,8 @@ const styles = StyleSheet.create({
   greeting: { fontSize: 24, fontWeight: 'bold', color: '#fff' },
   date: { fontSize: 13, color: '#666', marginTop: 2 },
   avatar: { width: 46, height: 46, borderRadius: 23, borderWidth: 2, borderColor: '#FFD600' },
+  avatarPlaceholder: { backgroundColor: '#222', alignItems: 'center', justifyContent: 'center' },
+  avatarInitial: { color: '#FFD600', fontSize: 18, fontWeight: 'bold' },
 
   statsRow: { flexDirection: 'row', gap: 10, marginBottom: 20 },
   statBox: { flex: 1, backgroundColor: '#1e1e1e', borderRadius: 14, padding: 14, gap: 4 },

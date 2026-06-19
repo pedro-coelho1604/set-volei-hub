@@ -4,7 +4,7 @@
  * `countMonthPresent(checkins)` counts how many days in the CURRENT month
  * are marked as 'present'. Justified absences and other months must not count.
  */
-import { countMonthPresent } from '../src/app/home/storage/checkinStorage'
+import { countMonthPresent } from '../src/storage/checkinStorage'
 
 // Build a YYYY-MM-DD key inside the current month so the test stays valid
 // regardless of when it runs.

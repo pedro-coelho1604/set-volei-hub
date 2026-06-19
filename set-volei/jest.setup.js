@@ -22,6 +22,24 @@ jest.mock('@react-native-async-storage/async-storage', () =>
 )
 
 /* ------------------------------------------------------------------ *
+ * expo-secure-store / expo-local-authentication - used by biometric login.
+ * ------------------------------------------------------------------ */
+const mockSecureStore = {}
+
+jest.mock('expo-secure-store', () => ({
+  WHEN_UNLOCKED_THIS_DEVICE_ONLY: 'WHEN_UNLOCKED_THIS_DEVICE_ONLY',
+  setItemAsync: jest.fn(async (key, value) => { mockSecureStore[key] = value }),
+  getItemAsync: jest.fn(async (key) => mockSecureStore[key] ?? null),
+  deleteItemAsync: jest.fn(async (key) => { delete mockSecureStore[key] }),
+}))
+
+jest.mock('expo-local-authentication', () => ({
+  hasHardwareAsync: jest.fn(async () => false),
+  isEnrolledAsync: jest.fn(async () => false),
+  authenticateAsync: jest.fn(async () => ({ success: false })),
+}))
+
+/* ------------------------------------------------------------------ *
  * expo-router — single shared router instance so navigation calls can
  * be asserted from the tests (`useRouter().replace`, `.push`, ...).
  * ------------------------------------------------------------------ */
@@ -178,6 +196,7 @@ jest.spyOn(Alert, 'alert').mockImplementation(() => {})
 const AsyncStorage = require('@react-native-async-storage/async-storage')
 afterEach(async () => {
   await AsyncStorage.clear()
+  Object.keys(mockSecureStore).forEach((key) => { delete mockSecureStore[key] })
 })
 
 // Quieter logs: the app uses console.log for non-critical avatar errors.

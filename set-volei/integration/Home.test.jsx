@@ -9,7 +9,7 @@
  */
 import { render, screen, fireEvent, waitFor } from '@testing-library/react-native'
 import Home from '../src/app/(tabs)/index'
-import { getCheckins } from '../src/app/home/storage/checkinStorage'
+import { getCheckins } from '../src/storage/checkinStorage'
 
 // Same date key the screen uses internally (UTC `toISOString` split).
 const todayStr = new Date().toISOString().split('T')[0]

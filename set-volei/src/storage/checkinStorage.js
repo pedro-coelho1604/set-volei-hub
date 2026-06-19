@@ -1,7 +1,7 @@
 import AsyncStorage from '@react-native-async-storage/async-storage'
 
 const CHECKIN_KEY = '@set_volei:checkins'
-const JUSTIF_KEY  = '@set_volei:justifications'
+const JUSTIF_KEY = '@set_volei:justifications'
 
 export async function getCheckins() {
   const raw = await AsyncStorage.getItem(CHECKIN_KEY)
