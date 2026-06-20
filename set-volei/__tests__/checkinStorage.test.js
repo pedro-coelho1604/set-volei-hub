@@ -4,6 +4,8 @@ import {
   doCheckin,
   cancelEntry,
   countMonthPresent,
+  getPendingCheckins,
+  flushPendingCheckins,
 } from '../src/storage/checkinStorage'
 
 const SECURE_TOKEN_KEY = 'set_volei_token'
@@ -13,6 +15,7 @@ const API_URL = 'https://set-volei-hub-api.onrender.com/auth/me/checkins'
 function jsonResponse(body, ok = true) {
   return {
     ok,
+    status: ok ? 200 : 400,
     text: jest.fn(async () => JSON.stringify(body)),
   }
 }
@@ -26,6 +29,7 @@ describe('checkinStorage', () => {
 
   it('loads check-ins from the API as a date map', async () => {
     global.fetch.mockResolvedValueOnce(jsonResponse({
+      credito_checkins: 7,
       checkins: [
         { id: 1, user_id: 5, checkin_date: DAY, created_at: '2026-06-19T12:00:00Z' },
       ],
@@ -35,7 +39,7 @@ describe('checkinStorage', () => {
 
     expect(checkins).toEqual({
       checkins: { [DAY]: 'present' },
-      credito_checkins: undefined,
+      credito_checkins: 7,
       loaded: true,
     })
     expect(global.fetch).toHaveBeenCalledWith(
@@ -66,8 +70,53 @@ describe('checkinStorage', () => {
 
     expect(global.fetch).toHaveBeenCalledWith(
       API_URL,
-      expect.objectContaining({ method: 'POST' }),
+      expect.objectContaining({
+        method: 'POST',
+        headers: expect.objectContaining({ 'Idempotency-Key': expect.stringContaining(`checkin-${DAY}-`) }),
+        body: expect.stringContaining('idempotency_key'),
+      }),
     )
+  })
+
+  it('keeps an offline check-in queued and retries with the same idempotency key', async () => {
+    global.fetch.mockRejectedValueOnce(new TypeError('Network request failed'))
+
+    await expect(doCheckin(DAY, 5)).resolves.toEqual(expect.objectContaining({
+      pending: true,
+      checkin: { checkin_date: DAY },
+    }))
+
+    const [pending] = await getPendingCheckins(5)
+    const firstRequest = global.fetch.mock.calls[0][1]
+
+    expect(pending).toEqual(expect.objectContaining({
+      dateStr: DAY,
+      userId: 5,
+      idempotencyKey: firstRequest.headers['Idempotency-Key'],
+    }))
+
+    global.fetch.mockResolvedValueOnce(jsonResponse({
+      message: 'Check-in criado',
+      credito_checkins: 7,
+      checkin: { id: 1, user_id: 5, checkin_date: DAY },
+    }))
+
+    await expect(flushPendingCheckins(5)).resolves.toEqual([
+      expect.objectContaining({ status: 'confirmed', dateStr: DAY }),
+    ])
+
+    const retryRequest = global.fetch.mock.calls[1][1]
+    expect(retryRequest.headers['Idempotency-Key']).toBe(firstRequest.headers['Idempotency-Key'])
+    await expect(getPendingCheckins(5)).resolves.toEqual([])
+  })
+
+  it('does not retry a queued check-in for another user', async () => {
+    global.fetch.mockRejectedValueOnce(new TypeError('Network request failed'))
+    await doCheckin(DAY, 5)
+
+    await expect(flushPendingCheckins(9)).resolves.toEqual([])
+    expect(global.fetch).toHaveBeenCalledTimes(1)
+    await expect(getPendingCheckins(5)).resolves.toHaveLength(1)
   })
 
   it('cancels a check-in through the API', async () => {

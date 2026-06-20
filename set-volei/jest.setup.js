@@ -21,9 +21,24 @@ jest.mock('@react-native-async-storage/async-storage', () =>
   require('@react-native-async-storage/async-storage/jest/async-storage-mock'),
 )
 
-/* ------------------------------------------------------------------ *
- * expo-secure-store / expo-local-authentication - used by biometric login.
- * ------------------------------------------------------------------ */
+const mockNetInfoListeners = new Set()
+
+jest.mock('@react-native-community/netinfo', () => ({
+  __esModule: true,
+  default: {
+    addEventListener: jest.fn((listener) => {
+      mockNetInfoListeners.add(listener)
+      listener({ isConnected: true, isInternetReachable: true })
+      return () => mockNetInfoListeners.delete(listener)
+    }),
+    fetch: jest.fn(async () => ({ isConnected: true, isInternetReachable: true })),
+  },
+}))
+
+global.mockNetInfoEmit = (state) => {
+  mockNetInfoListeners.forEach((listener) => listener(state))
+}
+
 const mockSecureStore = {}
 
 jest.mock('expo-secure-store', () => ({

@@ -10,6 +10,7 @@ const todayStr = TODAY_AT_18.toISOString().split('T')[0]
 function jsonResponse(body, ok = true) {
   return {
     ok,
+    status: ok ? 200 : 400,
     text: jest.fn(async () => JSON.stringify(body)),
   }
 }
@@ -101,6 +102,57 @@ describe('Home (integration)', () => {
 
     expect(await screen.findByTestId('home-cancel-checkin-button')).toBeTruthy()
     expect(screen.queryByTestId('home-checkin-button')).toBeNull()
+  })
+
+  it('queues a check-in offline and confirms it when the connection returns', async () => {
+    global.fetch
+      .mockResolvedValueOnce(jsonResponse(apiUser({ credito_checkins: 8 })))
+      .mockResolvedValueOnce(jsonResponse({ checkins: [] }))
+      .mockRejectedValueOnce(new TypeError('Network request failed'))
+
+    render(<Home />)
+    await screen.findByText(/Ola, Pedro/)
+
+    fireEvent.press(screen.getByTestId('home-day-today'))
+    fireEvent.press(await screen.findByTestId('home-checkin-button'))
+
+    expect(await screen.findByTestId('home-pending-checkin-banner')).toBeTruthy()
+
+    global.fetch.mockResolvedValueOnce(jsonResponse({
+      message: 'Check-in criado',
+      credito_checkins: 7,
+      checkin: { id: 1, user_id: 5, checkin_date: todayStr },
+    }))
+
+    global.mockNetInfoEmit({ isConnected: true, isInternetReachable: true })
+
+    await waitFor(() => {
+      expect(screen.queryByTestId('home-pending-checkin-banner')).toBeNull()
+    })
+
+    fireEvent.press(screen.getByTestId('home-day-today'))
+    expect(await screen.findByTestId('home-cancel-checkin-button')).toBeTruthy()
+  })
+
+  it('restores the credit when a queued check-in is rejected after reconnecting', async () => {
+    global.fetch
+      .mockResolvedValueOnce(jsonResponse(apiUser({ credito_checkins: 8 })))
+      .mockResolvedValueOnce(jsonResponse({ checkins: [] }))
+      .mockRejectedValueOnce(new TypeError('Network request failed'))
+
+    render(<Home />)
+    await screen.findByText(/Ola, Pedro/)
+
+    fireEvent.press(screen.getByTestId('home-day-today'))
+    fireEvent.press(await screen.findByTestId('home-checkin-button'))
+
+    expect(await screen.findByText('Voce tem 7 creditos de check-in neste mes.')).toBeTruthy()
+
+    global.fetch.mockResolvedValueOnce(jsonResponse({ detail: 'Check-in encerrado' }, false))
+    global.mockNetInfoEmit({ isConnected: true, isInternetReachable: true })
+
+    expect(await screen.findByText('Voce tem 8 creditos de check-in neste mes.')).toBeTruthy()
+    expect(screen.queryByTestId('home-pending-checkin-banner')).toBeNull()
   })
 
   it('treats duplicate check-in errors as an already confirmed check-in', async () => {

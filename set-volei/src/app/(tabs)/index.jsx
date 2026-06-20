@@ -5,10 +5,17 @@ import {
 } from 'react-native'
 import { SafeAreaView } from 'react-native-safe-area-context'
 import { useRouter } from 'expo-router'
+import NetInfo from '@react-native-community/netinfo'
 import BottomMenu from '../../components/BottomMenu'
 import { userMock, planMock, getTrainingDays, championshipsMock } from '../../mocks/userMocks'
 import { fetchCurrentUser, getStoredUser } from '../../storage/authStorage'
-import { getCheckins, doCheckin, cancelEntry } from '../../storage/checkinStorage'
+import {
+  getCheckins,
+  doCheckin,
+  cancelEntry,
+  getPendingCheckins,
+  flushPendingCheckins,
+} from '../../storage/checkinStorage'
 
 const DAY_LABELS = ['Dom', 'Seg', 'Ter', 'Qua', 'Qui', 'Sex', 'Sab']
 const MONTH_NAMES = ['Jan', 'Fev', 'Mar', 'Abr', 'Mai', 'Jun', 'Jul', 'Ago', 'Set', 'Out', 'Nov', 'Dez']
@@ -78,6 +85,11 @@ export default function Home() {
 
     const checkinResult = await getCheckins(toDateStr(week[0]), toDateStr(week[6]))
     const nextUser = storedUser ?? userMock
+    const pending = await getPendingCheckins(nextUser.id)
+    const pendingMap = pending.reduce((acc, item) => {
+      acc[item.dateStr] = 'pending'
+      return acc
+    }, {})
 
     setUser({
       ...nextUser,
@@ -85,11 +97,68 @@ export default function Home() {
     })
     setPlan(planMock)
     setTrainingDays(getTrainingDays())
-    setCheckins(checkinResult.checkins)
+    setCheckins({ ...pendingMap, ...checkinResult.checkins })
     setCheckinsLoaded(checkinResult.loaded)
   }, [])
 
   useEffect(() => { loadData() }, [loadData])
+
+  const syncPending = useCallback(async () => {
+    if (!user?.id) return
+
+    let results
+    try {
+      results = await flushPendingCheckins(user.id)
+    } catch {
+      return
+    }
+
+    if (results.length === 0) return
+
+    setCheckins((current) => {
+      const updated = { ...current }
+      results.forEach(({ status: syncStatus, dateStr }) => {
+        if (syncStatus === 'confirmed') updated[dateStr] = 'present'
+        if (syncStatus === 'failed') delete updated[dateStr]
+      })
+      return updated
+    })
+
+    const confirmedWithCredits = [...results]
+      .reverse()
+      .find(({ status: syncStatus, result }) => (
+        syncStatus === 'confirmed' && result?.credito_checkins !== undefined
+      ))
+
+    if (confirmedWithCredits) {
+      setUser((current) => ({
+        ...(current ?? userMock),
+        credito_checkins: confirmedWithCredits.result.credito_checkins,
+      }))
+    } else {
+      const failedCount = results.filter(({ status: syncStatus }) => syncStatus === 'failed').length
+      if (failedCount > 0) {
+        setUser((current) => ({
+          ...(current ?? userMock),
+          credito_checkins: Math.min(
+            MONTH_GOAL,
+            (current?.credito_checkins ?? MONTH_GOAL) + failedCount,
+          ),
+        }))
+      }
+    }
+  }, [user?.id])
+
+  useEffect(() => {
+    if (!user?.id) return undefined
+
+    const unsubscribe = NetInfo.addEventListener((state) => {
+      const hasConnection = state.isConnected !== false && state.isInternetReachable !== false
+      if (hasConnection) syncPending()
+    })
+
+    return unsubscribe
+  }, [syncPending, user?.id])
 
   const daysLeft = plan ? daysUntil(plan.expires) : 0
   const checkinCredits = user?.credito_checkins ?? MONTH_GOAL
@@ -99,13 +168,17 @@ export default function Home() {
   const nextTraining = getNextTraining(trainingDays)
   const nextDiff = nextTraining ? getDaysDiff(nextTraining) : null
   const status = selectedDay ? checkins[selectedDay.dateStr] : null
+  const pendingCount = Object.values(checkins).filter((value) => value === 'pending').length
 
   async function handleCheckin(dateStr) {
     setLoadingCheckin(dateStr)
     try {
-      const result = await doCheckin(dateStr)
+      const result = await doCheckin(dateStr, user?.id)
       const confirmedDate = result?.checkin?.checkin_date ?? dateStr
-      setCheckins((current) => ({ ...current, [confirmedDate]: 'present' }))
+      setCheckins((current) => ({
+        ...current,
+        [confirmedDate]: result?.pending ? 'pending' : 'present',
+      }))
       setCheckinsLoaded(true)
       setUser((current) => ({
         ...(current ?? userMock),
@@ -193,6 +266,15 @@ export default function Home() {
           <Text style={styles.progressSub}>{usedCredits} de {MONTH_GOAL} creditos usados</Text>
         </View>
 
+        {pendingCount > 0 && (
+          <View testID="home-pending-checkin-banner" style={styles.pendingBanner}>
+            <Text style={styles.pendingBannerTitle}>Check-in aguardando internet</Text>
+            <Text style={styles.pendingBannerText}>
+              O envio sera concluido automaticamente quando a conexao voltar.
+            </Text>
+          </View>
+        )}
+
         {nextTraining && (
           <View style={styles.nextTrainingCard}>
             <Text style={styles.nextTrainingLabel}>Proximo treino</Text>
@@ -239,6 +321,7 @@ export default function Home() {
                   isTraining && styles.dayBoxTraining,
                   isToday && styles.dayBoxToday,
                   st === 'present' && styles.dayBoxPresent,
+                  st === 'pending' && styles.dayBoxPending,
                 ]}
               >
                 <Text style={[
@@ -246,6 +329,7 @@ export default function Home() {
                   isTraining && styles.dayLabelTraining,
                   isToday && { color: '#000' },
                   st === 'present' && { color: '#fff' },
+                  st === 'pending' && { color: '#fff' },
                 ]}>
                   {DAY_LABELS[day.getDay()]}
                 </Text>
@@ -253,12 +337,15 @@ export default function Home() {
                   styles.dayNum,
                   isToday && styles.dayNumToday,
                   st === 'present' && { color: '#fff' },
+                  st === 'pending' && { color: '#fff' },
                 ]}>
                   {day.getDate()}
                 </Text>
                 {isTraining && (
                   st === 'present'
                     ? <Text style={[styles.statusIcon, { color: '#4caf50' }]}>OK</Text>
+                    : st === 'pending'
+                      ? <Text style={[styles.statusIcon, { color: '#FFD600' }]}>...</Text>
                     : showAbsence
                       ? <Text style={[styles.statusIcon, isToday ? { color: '#000' } : { color: '#ff4d4d' }]}>F</Text>
                       : <ActivityIndicator testID={`home-day-loading-${dateStr}`} size="small" color={isToday ? '#000' : '#FFD600'} />
@@ -304,12 +391,30 @@ export default function Home() {
                     </View>
                     <View style={styles.modalInfoRow}>
                       <Text style={styles.modalInfoLabel}>Status</Text>
-                      <Text style={[styles.modalInfoValue, status === 'present' ? { color: '#4caf50' } : { color: '#ff4d4d' }]}>
-                        {status === 'present' ? 'Check-in confirmado' : 'Falta'}
+                      <Text style={[
+                        styles.modalInfoValue,
+                        status === 'present'
+                          ? { color: '#4caf50' }
+                          : status === 'pending'
+                            ? { color: '#FFD600' }
+                            : { color: '#ff4d4d' },
+                      ]}>
+                        {status === 'present'
+                          ? 'Check-in confirmado'
+                          : status === 'pending'
+                            ? 'Aguardando internet'
+                            : 'Falta'}
                       </Text>
                     </View>
 
-                    {status === 'present' ? (
+                    {status === 'pending' ? (
+                      <View style={styles.pendingModalCard}>
+                        <ActivityIndicator color="#FFD600" />
+                        <Text style={styles.pendingModalText}>
+                          Seu check-in esta salvo e sera enviado automaticamente.
+                        </Text>
+                      </View>
+                    ) : status === 'present' ? (
                       <TouchableOpacity
                         testID="home-cancel-checkin-button"
                         style={styles.btnCancel}
@@ -379,6 +484,16 @@ const styles = StyleSheet.create({
   progressFill: { height: 5, backgroundColor: '#FFD600', borderRadius: 3 },
   progressSub: { fontSize: 11, color: '#555', marginTop: 6 },
   cardWarning: { borderLeftColor: '#ff6b00' },
+  pendingBanner: {
+    backgroundColor: '#211d08',
+    borderRadius: 10,
+    borderLeftWidth: 3,
+    borderLeftColor: '#FFD600',
+    padding: 12,
+    marginBottom: 12,
+  },
+  pendingBannerTitle: { color: '#FFD600', fontSize: 13, fontWeight: 'bold' },
+  pendingBannerText: { color: '#aaa', fontSize: 12, lineHeight: 17, marginTop: 3 },
 
   nextTrainingCard: {
     backgroundColor: '#1e1e1e', borderRadius: 12, padding: 14,
@@ -398,6 +513,7 @@ const styles = StyleSheet.create({
   dayBoxTraining: { backgroundColor: '#1a1600', borderWidth: 1, borderColor: '#333' },
   dayBoxToday: { backgroundColor: '#FFD600' },
   dayBoxPresent: { backgroundColor: '#1a3a1a', borderColor: '#4caf50', borderWidth: 1 },
+  dayBoxPending: { backgroundColor: '#302900', borderColor: '#FFD600', borderWidth: 1 },
   dayLabel: { fontSize: 10, color: '#666' },
   dayLabelTraining: { color: '#aaa' },
   dayNum: { fontSize: 14, fontWeight: 'bold', color: '#fff' },
@@ -422,6 +538,16 @@ const styles = StyleSheet.create({
   btnCheckinText: { color: '#000', fontWeight: 'bold', fontSize: 15 },
   btnCancel: { borderWidth: 1, borderColor: '#ff4d4d', borderRadius: 10, paddingVertical: 12, alignItems: 'center', marginTop: 10 },
   btnCancelText: { color: '#ff4d4d', fontWeight: 'bold', fontSize: 14 },
+  pendingModalCard: {
+    backgroundColor: '#111',
+    borderRadius: 10,
+    padding: 12,
+    marginTop: 10,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+  },
+  pendingModalText: { color: '#bbb', fontSize: 13, lineHeight: 18, flex: 1 },
   blockedCard: {
     backgroundColor: '#111',
     borderRadius: 10,
