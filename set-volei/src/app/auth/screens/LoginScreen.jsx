@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import {
   View,
   Text,
@@ -10,7 +10,7 @@ import {
   Platform,
 } from 'react-native'
 import { useRouter } from 'expo-router'
-import { login } from '../storage/authStorage'
+import { canUseBiometricLogin, login, loginWithBiometrics } from '../../../storage/authStorage'
 
 export default function LoginScreen() {
   const router = useRouter()
@@ -18,6 +18,19 @@ export default function LoginScreen() {
   const [password, setPassword] = useState('')
   const [error, setError] = useState('')
   const [loading, setLoading] = useState(false)
+  const [biometricAvailable, setBiometricAvailable] = useState(false)
+
+  useEffect(() => {
+    let active = true
+
+    async function checkBiometrics() {
+      const available = await canUseBiometricLogin()
+      if (active && available) setBiometricAvailable(true)
+    }
+
+    checkBiometrics()
+    return () => { active = false }
+  }, [])
 
   async function handleLogin() {
     if (!email || !password) {
@@ -27,6 +40,19 @@ export default function LoginScreen() {
     setError('')
     setLoading(true)
     const result = await login(email, password)
+    setLoading(false)
+
+    if (result.success) {
+      router.replace('/(tabs)/')
+    } else {
+      setError(result.error)
+    }
+  }
+
+  async function handleBiometricLogin() {
+    setError('')
+    setLoading(true)
+    const result = await loginWithBiometrics()
     setLoading(false)
 
     if (result.success) {
@@ -89,6 +115,27 @@ export default function LoginScreen() {
             ) : (
               <Text style={styles.buttonText}>Entrar</Text>
             )}
+          </TouchableOpacity>
+
+          {biometricAvailable ? (
+            <TouchableOpacity
+              testID="login-biometric-button"
+              style={styles.biometricButton}
+              onPress={handleBiometricLogin}
+              disabled={loading}
+              accessibilityRole="button"
+              accessibilityLabel="Entrar com Face ID ou Touch ID"
+            >
+              <Text style={styles.biometricButtonText}>Entrar com Face ID / Touch ID</Text>
+            </TouchableOpacity>
+          ) : null}
+
+          <TouchableOpacity
+            testID="login-register-link"
+            onPress={() => router.replace('/auth/screens/RegisterScreen')}
+            disabled={loading}
+          >
+            <Text style={styles.linkText}>Criar conta</Text>
           </TouchableOpacity>
         </View>
 
@@ -163,5 +210,23 @@ const styles = StyleSheet.create({
     color: '#000',
     fontWeight: 'bold',
     fontSize: 16,
+  },
+  biometricButton: {
+    borderWidth: 1,
+    borderColor: '#FFD600',
+    borderRadius: 10,
+    paddingVertical: 14,
+    alignItems: 'center',
+  },
+  biometricButtonText: {
+    color: '#FFD600',
+    fontWeight: 'bold',
+    fontSize: 15,
+  },
+  linkText: {
+    color: '#FFD600',
+    fontSize: 14,
+    textAlign: 'center',
+    paddingVertical: 8,
   },
 })

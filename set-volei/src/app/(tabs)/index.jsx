@@ -1,22 +1,26 @@
 import { useEffect, useState, useCallback } from 'react'
 import {
   View, Text, StyleSheet, ScrollView, TouchableOpacity,
-  ActivityIndicator, Image, Modal, TextInput, Pressable,
-  KeyboardAvoidingView, Platform, Keyboard,
+  ActivityIndicator, Image, Modal, Pressable, Alert,
 } from 'react-native'
 import { SafeAreaView } from 'react-native-safe-area-context'
 import { useRouter } from 'expo-router'
+import NetInfo from '@react-native-community/netinfo'
 import BottomMenu from '../../components/BottomMenu'
 import { userMock, planMock, getTrainingDays, championshipsMock } from '../../mocks/userMocks'
-import { getStoredUser } from '../auth/storage/authStorage'
+import { fetchCurrentUser, getStoredUser } from '../../storage/authStorage'
 import {
-  getCheckins, doCheckin, doJustify,
-  getJustifications, countMonthPresent, cancelEntry,
-} from '../home/storage/checkinStorage'
+  getCheckins,
+  doCheckin,
+  cancelEntry,
+  getPendingCheckins,
+  flushPendingCheckins,
+} from '../../storage/checkinStorage'
 
-const DAY_LABELS  = ['Dom','Seg','Ter','Qua','Qui','Sex','Sáb']
-const MONTH_NAMES = ['Jan','Fev','Mar','Abr','Mai','Jun','Jul','Ago','Set','Out','Nov','Dez']
-const MONTH_GOAL  = 8
+const DAY_LABELS = ['Dom', 'Seg', 'Ter', 'Qua', 'Qui', 'Sex', 'Sab']
+const MONTH_NAMES = ['Jan', 'Fev', 'Mar', 'Abr', 'Mai', 'Jun', 'Jul', 'Ago', 'Set', 'Out', 'Nov', 'Dez']
+const MONTH_GOAL = 8
+const CHECKIN_DEADLINE_HOUR = 21
 
 function getWeekDays() {
   const today = new Date()
@@ -64,87 +68,172 @@ export default function Home() {
   const today = new Date()
   const todayStr = toDateStr(today)
   const weekDays = getWeekDays()
+  const canCheckinToday = today.getHours() < CHECKIN_DEADLINE_HOUR
 
-  const [user, setUser]               = useState(null)
-  const [plan, setPlan]               = useState(null)
+  const [user, setUser] = useState(null)
+  const [plan, setPlan] = useState(null)
   const [trainingDays, setTrainingDays] = useState([])
-  const [checkins, setCheckins]       = useState({})
-  const [justifs, setJustifs]         = useState({})
+  const [checkins, setCheckins] = useState({})
+  const [checkinsLoaded, setCheckinsLoaded] = useState(false)
+  const [selectedDay, setSelectedDay] = useState(null)
   const [loadingCheckin, setLoadingCheckin] = useState(null)
 
-
-  const [selectedDay, setSelectedDay] = useState(null)
-  const [justifyText, setJustifyText] = useState('')
-  const [justifyLoading, setJustifyLoading] = useState(false)
-
   const loadData = useCallback(async () => {
-    const storedUser = await getStoredUser()
-    setUser(storedUser ?? userMock)
+    const currentUser = await fetchCurrentUser()
+    const storedUser = currentUser ?? await getStoredUser()
+    const week = getWeekDays()
+
+    const checkinResult = await getCheckins(toDateStr(week[0]), toDateStr(week[6]))
+    const nextUser = storedUser ?? userMock
+    const pending = await getPendingCheckins(nextUser.id)
+    const pendingMap = pending.reduce((acc, item) => {
+      acc[item.dateStr] = 'pending'
+      return acc
+    }, {})
+
+    setUser({
+      ...nextUser,
+      credito_checkins: checkinResult.credito_checkins ?? nextUser.credito_checkins,
+    })
     setPlan(planMock)
     setTrainingDays(getTrainingDays())
-    const c = await getCheckins()
-    const j = await getJustifications()
-    setCheckins(c)
-    setJustifs(j)
+    setCheckins({ ...pendingMap, ...checkinResult.checkins })
+    setCheckinsLoaded(checkinResult.loaded)
   }, [])
 
   useEffect(() => { loadData() }, [loadData])
 
-  const daysLeft     = plan ? daysUntil(plan.expires) : 0
-  const monthPresent = countMonthPresent(checkins)
-  const progress     = Math.min(monthPresent / MONTH_GOAL, 1)
-  const firstName    = (user?.name ?? '').split(' ')[0]
+  const syncPending = useCallback(async () => {
+    if (!user?.id) return
+
+    let results
+    try {
+      results = await flushPendingCheckins(user.id)
+    } catch {
+      return
+    }
+
+    if (results.length === 0) return
+
+    setCheckins((current) => {
+      const updated = { ...current }
+      results.forEach(({ status: syncStatus, dateStr }) => {
+        if (syncStatus === 'confirmed') updated[dateStr] = 'present'
+        if (syncStatus === 'failed') delete updated[dateStr]
+      })
+      return updated
+    })
+
+    const confirmedWithCredits = [...results]
+      .reverse()
+      .find(({ status: syncStatus, result }) => (
+        syncStatus === 'confirmed' && result?.credito_checkins !== undefined
+      ))
+
+    if (confirmedWithCredits) {
+      setUser((current) => ({
+        ...(current ?? userMock),
+        credito_checkins: confirmedWithCredits.result.credito_checkins,
+      }))
+    } else {
+      const failedCount = results.filter(({ status: syncStatus }) => syncStatus === 'failed').length
+      if (failedCount > 0) {
+        setUser((current) => ({
+          ...(current ?? userMock),
+          credito_checkins: Math.min(
+            MONTH_GOAL,
+            (current?.credito_checkins ?? MONTH_GOAL) + failedCount,
+          ),
+        }))
+      }
+    }
+  }, [user?.id])
+
+  useEffect(() => {
+    if (!user?.id) return undefined
+
+    const unsubscribe = NetInfo.addEventListener((state) => {
+      const hasConnection = state.isConnected !== false && state.isInternetReachable !== false
+      if (hasConnection) syncPending()
+    })
+
+    return unsubscribe
+  }, [syncPending, user?.id])
+
+  const daysLeft = plan ? daysUntil(plan.expires) : 0
+  const checkinCredits = user?.credito_checkins ?? MONTH_GOAL
+  const usedCredits = Math.max(0, MONTH_GOAL - checkinCredits)
+  const progress = Math.min(usedCredits / MONTH_GOAL, 1)
+  const firstName = (user?.name ?? '').split(' ')[0]
   const nextTraining = getNextTraining(trainingDays)
-  const nextDiff     = nextTraining ? getDaysDiff(nextTraining) : null
+  const nextDiff = nextTraining ? getDaysDiff(nextTraining) : null
+  const status = selectedDay ? checkins[selectedDay.dateStr] : null
+  const pendingCount = Object.values(checkins).filter((value) => value === 'pending').length
 
   async function handleCheckin(dateStr) {
     setLoadingCheckin(dateStr)
-    await doCheckin(dateStr)
-    await loadData()
-    setLoadingCheckin(null)
-    setSelectedDay(null)
+    try {
+      const result = await doCheckin(dateStr, user?.id)
+      const confirmedDate = result?.checkin?.checkin_date ?? dateStr
+      setCheckins((current) => ({
+        ...current,
+        [confirmedDate]: result?.pending ? 'pending' : 'present',
+      }))
+      setCheckinsLoaded(true)
+      setUser((current) => ({
+        ...(current ?? userMock),
+        credito_checkins: result?.credito_checkins ?? Math.max(0, (current?.credito_checkins ?? MONTH_GOAL) - 1),
+      }))
+      setSelectedDay(null)
+    } catch (error) {
+      const message = error?.message ?? ''
+      if (/ja|j[aá]|already|existe|duplic/i.test(message)) {
+        setCheckins((current) => ({ ...current, [dateStr]: 'present' }))
+        setCheckinsLoaded(true)
+        setSelectedDay(null)
+      } else {
+        Alert.alert('Erro', message || 'Nao foi possivel fazer check-in.')
+      }
+    } finally {
+      setLoadingCheckin(null)
+    }
   }
 
   async function handleCancelEntry(dateStr) {
-    await cancelEntry(dateStr)
-    await loadData()
-    setSelectedDay(null)
-  }
-
-  async function handleJustify() {
-    if (!justifyText.trim() || !selectedDay) return
-    Keyboard.dismiss()
-    setJustifyLoading(true)
-    await doJustify(selectedDay.dateStr, justifyText.trim())
-    await loadData()
-    setJustifyLoading(false)
-    setJustifyText('')
-    setSelectedDay(null)
-  }
-
-  function closeModal() {
-    Keyboard.dismiss()
-    setSelectedDay(null)
+    setLoadingCheckin(dateStr)
+    try {
+      const result = await cancelEntry(dateStr)
+      setCheckins((current) => {
+        const updated = { ...current }
+        delete updated[dateStr]
+        return updated
+      })
+      setCheckinsLoaded(true)
+      setUser((current) => ({
+        ...(current ?? userMock),
+        credito_checkins: result?.credito_checkins ?? Math.min(MONTH_GOAL, (current?.credito_checkins ?? MONTH_GOAL) + 1),
+      }))
+      setSelectedDay(null)
+    } catch (error) {
+      Alert.alert('Erro', error?.message || 'Nao foi possivel cancelar o check-in.')
+    } finally {
+      setLoadingCheckin(null)
+    }
   }
 
   function openDay(day) {
-    const dateStr   = toDateStr(day)
+    const dateStr = toDateStr(day)
     const isTraining = trainingDays.includes(day.getDay())
-    const isPast    = dateStr < todayStr
-    const isToday   = dateStr === todayStr
-    setJustifyText(justifs[dateStr] ?? '')
-    setSelectedDay({ date: day, dateStr, isTraining, isPast, isToday })
+    const isToday = dateStr === todayStr
+    setSelectedDay({ date: day, dateStr, isTraining, isToday })
   }
-
-  const status = selectedDay ? checkins[selectedDay.dateStr] : null
 
   return (
     <SafeAreaView style={styles.container} edges={['top']}>
       <ScrollView contentContainerStyle={styles.scroll} showsVerticalScrollIndicator={false}>
-
         <View style={styles.header}>
           <View>
-            <Text style={styles.greeting}>Olá, {firstName}!</Text>
+            <Text style={styles.greeting}>Ola, {firstName}!</Text>
             <Text style={styles.date}>
               {DAY_LABELS[today.getDay()]}, {today.getDate()} de {MONTH_NAMES[today.getMonth()]}
             </Text>
@@ -155,46 +244,58 @@ export default function Home() {
             accessibilityLabel="Ir para o perfil"
             onPress={() => router.push('/perfil')}
           >
-            <Image source={{ uri: user?.avatar ?? userMock.avatar }} style={styles.avatar} />
+            {user?.avatar ? (
+              <Image source={{ uri: user.avatar }} style={styles.avatar} />
+            ) : (
+              <View style={[styles.avatar, styles.avatarPlaceholder]}>
+                <Text style={styles.avatarInitial}>{firstName.charAt(0).toUpperCase()}</Text>
+              </View>
+            )}
           </TouchableOpacity>
         </View>
 
         <View style={styles.monthCard}>
           <Text style={styles.monthCardText}>
-            {monthPresent >= MONTH_GOAL
-              ? `Você bateu a meta de ${MONTH_GOAL} treinos esse mês!`
-              : monthPresent === 0
-                ? `Você ainda tem ${MONTH_GOAL} treinos esse mês. Bora começar!`
-                : `Você já fez ${monthPresent} treino${monthPresent > 1 ? 's' : ''} esse mês. Restam ${MONTH_GOAL - monthPresent} treinos!`}
+            {checkinCredits > 0
+              ? `Voce tem ${checkinCredits} credito${checkinCredits !== 1 ? 's' : ''} de check-in neste mes.`
+              : 'Voce usou todos os creditos de check-in deste mes.'}
           </Text>
           <View style={styles.progressBg}>
             <View style={[styles.progressFill, { width: `${progress * 100}%` }]} />
           </View>
-          <Text style={styles.progressSub}>{monthPresent} de {MONTH_GOAL} treinos</Text>
+          <Text style={styles.progressSub}>{usedCredits} de {MONTH_GOAL} creditos usados</Text>
         </View>
+
+        {pendingCount > 0 && (
+          <View testID="home-pending-checkin-banner" style={styles.pendingBanner}>
+            <Text style={styles.pendingBannerTitle}>Check-in aguardando internet</Text>
+            <Text style={styles.pendingBannerText}>
+              O envio sera concluido automaticamente quando a conexao voltar.
+            </Text>
+          </View>
+        )}
 
         {nextTraining && (
           <View style={styles.nextTrainingCard}>
-            <Text style={styles.nextTrainingLabel}>Próximo treino</Text>
+            <Text style={styles.nextTrainingLabel}>Proximo treino</Text>
             <Text style={styles.nextTrainingValue}>
               {DAY_LABELS[nextTraining.getDay()]}, {nextTraining.getDate()} de {MONTH_NAMES[nextTraining.getMonth()]}
               {'  '}
               <Text style={styles.nextTrainingDiff}>
-                {nextDiff === 1 ? 'amanhã' : `em ${nextDiff} dias`}
+                {nextDiff === 1 ? 'amanha' : `em ${nextDiff} dias`}
               </Text>
             </Text>
           </View>
         )}
 
         <View style={[styles.nextTrainingCard, daysLeft <= 7 && styles.cardWarning]}>
-          <Text style={styles.nextTrainingLabel}>Mensalidade · {plan?.name}</Text>
+          <Text style={styles.nextTrainingLabel}>Mensalidade - {plan?.name}</Text>
           <Text style={styles.nextTrainingValue}>
-            {daysLeft > 0 ? `Vence em ` : 'Vencida há '}
+            {daysLeft > 0 ? 'Vence em ' : 'Vencida ha '}
             <Text style={[styles.nextTrainingDiff, daysLeft <= 7 && { color: '#ff6b00' }]}>
               {Math.abs(daysLeft)} dia{Math.abs(daysLeft) !== 1 ? 's' : ''}
             </Text>
-            {daysLeft > 0 ? ` · ${plan?.expires}` : ''}
-            {daysLeft <= 7 ? '' : ''}
+            {daysLeft > 0 ? ` - ${plan?.expires}` : ''}
           </Text>
         </View>
 
@@ -203,9 +304,10 @@ export default function Home() {
         <View style={styles.weekRow}>
           {weekDays.map((day) => {
             const isTraining = trainingDays.includes(day.getDay())
-            const isToday    = toDateStr(day) === todayStr
-            const dateStr    = toDateStr(day)
-            const st         = checkins[dateStr]
+            const isToday = toDateStr(day) === todayStr
+            const dateStr = toDateStr(day)
+            const st = checkins[dateStr]
+            const showAbsence = isTraining && checkinsLoaded && st !== 'present'
 
             return (
               <TouchableOpacity
@@ -218,8 +320,8 @@ export default function Home() {
                   styles.dayBox,
                   isTraining && styles.dayBoxTraining,
                   isToday && styles.dayBoxToday,
-                  st === 'present'   && styles.dayBoxPresent,
-                  st === 'justified' && styles.dayBoxJustified,
+                  st === 'present' && styles.dayBoxPresent,
+                  st === 'pending' && styles.dayBoxPending,
                 ]}
               >
                 <Text style={[
@@ -227,26 +329,33 @@ export default function Home() {
                   isTraining && styles.dayLabelTraining,
                   isToday && { color: '#000' },
                   st === 'present' && { color: '#fff' },
-                  st === 'justified' && { color: '#fff' },
+                  st === 'pending' && { color: '#fff' },
                 ]}>
                   {DAY_LABELS[day.getDay()]}
                 </Text>
-                <Text style={[styles.dayNum, isToday && styles.dayNumToday, st === 'present' && { color: '#fff' }, st === 'justified' && { color: '#fff' }]}>
+                <Text style={[
+                  styles.dayNum,
+                  isToday && styles.dayNumToday,
+                  st === 'present' && { color: '#fff' },
+                  st === 'pending' && { color: '#fff' },
+                ]}>
                   {day.getDate()}
                 </Text>
                 {isTraining && (
-                  st === 'present'   ? <Text style={[styles.statusIcon, { color: '#4caf50' }]}>✓</Text>  :
-                  st === 'justified' ? <Text style={[styles.statusIcon, { color: '#888' }]}>F</Text> :
-                  isToday            ? <View style={styles.trainingDotYellow} />  :
-                  dateStr < todayStr ? <Text style={[styles.statusIcon, { color: '#ff4d4d' }]}>F</Text> :
-                                       <View style={styles.trainingDot} />
+                  st === 'present'
+                    ? <Text style={[styles.statusIcon, { color: '#4caf50' }]}>OK</Text>
+                    : st === 'pending'
+                      ? <Text style={[styles.statusIcon, { color: '#FFD600' }]}>...</Text>
+                    : showAbsence
+                      ? <Text style={[styles.statusIcon, isToday ? { color: '#000' } : { color: '#ff4d4d' }]}>F</Text>
+                      : <ActivityIndicator testID={`home-day-loading-${dateStr}`} size="small" color={isToday ? '#000' : '#FFD600'} />
                 )}
               </TouchableOpacity>
             )
           })}
         </View>
 
-        <Text style={styles.sectionTitle}>Campeonatos próximos</Text>
+        <Text style={styles.sectionTitle}>Campeonatos proximos</Text>
         {championshipsMock.map((c) => (
           <View key={c.id} style={styles.championCard}>
             <View style={{ flex: 1, gap: 3 }}>
@@ -260,148 +369,93 @@ export default function Home() {
         <View style={{ height: 110 }} />
       </ScrollView>
 
-      <Modal visible={!!selectedDay} transparent animationType="slide" onRequestClose={closeModal}>
-        <Pressable style={styles.modalOverlay} onPress={closeModal}>
-          <KeyboardAvoidingView
-            behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
-            style={{ width: '100%' }}
-          >
-            <Pressable style={styles.modalBox} onPress={() => {}}>
-              <ScrollView keyboardShouldPersistTaps="handled" showsVerticalScrollIndicator={false}>
-              {selectedDay && (
-                <>
-                  <Text style={styles.modalTitle}>
-                    {DAY_LABELS[selectedDay.date.getDay()]}, {selectedDay.date.getDate()} de {MONTH_NAMES[selectedDay.date.getMonth()]}
-                  </Text>
+      <Modal visible={!!selectedDay} transparent animationType="slide" onRequestClose={() => setSelectedDay(null)}>
+        <Pressable style={styles.modalOverlay} onPress={() => setSelectedDay(null)}>
+          <Pressable style={styles.modalBox} onPress={() => {}}>
+            {selectedDay && (
+              <>
+                <Text style={styles.modalTitle}>
+                  {DAY_LABELS[selectedDay.date.getDay()]}, {selectedDay.date.getDate()} de {MONTH_NAMES[selectedDay.date.getMonth()]}
+                </Text>
+                {!selectedDay.isTraining ? (
+                  <Text style={styles.modalSub}>Sem treino neste dia.</Text>
+                ) : (
+                  <>
+                    <View style={styles.modalInfoRow}>
+                      <Text style={styles.modalInfoLabel}>Horario</Text>
+                      <Text style={styles.modalInfoValue}>19h00 - 21h00</Text>
+                    </View>
+                    <View style={styles.modalInfoRow}>
+                      <Text style={styles.modalInfoLabel}>Local</Text>
+                      <Text style={styles.modalInfoValue}>Quadra Principal</Text>
+                    </View>
+                    <View style={styles.modalInfoRow}>
+                      <Text style={styles.modalInfoLabel}>Status</Text>
+                      <Text style={[
+                        styles.modalInfoValue,
+                        status === 'present'
+                          ? { color: '#4caf50' }
+                          : status === 'pending'
+                            ? { color: '#FFD600' }
+                            : { color: '#ff4d4d' },
+                      ]}>
+                        {status === 'present'
+                          ? 'Check-in confirmado'
+                          : status === 'pending'
+                            ? 'Aguardando internet'
+                            : 'Falta'}
+                      </Text>
+                    </View>
 
-                  {!selectedDay.isTraining ? (
-                    <Text style={styles.modalSub}>Sem treino neste dia.</Text>
-                  ) : (
-                    <>
-                      <View style={styles.modalInfoRow}>
-                        <Text style={styles.modalInfoLabel}>Horário</Text>
-                        <Text style={styles.modalInfoValue}>19h00 – 21h00</Text>
-                      </View>
-                      <View style={styles.modalInfoRow}>
-                        <Text style={styles.modalInfoLabel}>Local</Text>
-                        <Text style={styles.modalInfoValue}>Quadra Principal</Text>
-                      </View>
-                      <View style={styles.modalInfoRow}>
-                        <Text style={styles.modalInfoLabel}>Status</Text>
-                        <Text style={[styles.modalInfoValue,
-                          status === 'present'   && { color: '#4caf50' },
-                          status === 'justified' && { color: '#888' },
-                          !status && selectedDay.isPast && !selectedDay.isToday && { color: '#ff4d4d' },
-                          !status && { color: '#888' },
-                        ]}>
-                          {status === 'present'   ? '✓ Presença confirmada' :
-                           status === 'justified' ? 'Falta justificada'  :
-                           selectedDay.isPast && !selectedDay.isToday ? 'Falta sem justificativa' :
-                           'Sem registro'}
+                    {status === 'pending' ? (
+                      <View style={styles.pendingModalCard}>
+                        <ActivityIndicator color="#FFD600" />
+                        <Text style={styles.pendingModalText}>
+                          Seu check-in esta salvo e sera enviado automaticamente.
                         </Text>
                       </View>
+                    ) : status === 'present' ? (
+                      <TouchableOpacity
+                        testID="home-cancel-checkin-button"
+                        style={styles.btnCancel}
+                        onPress={() => handleCancelEntry(selectedDay.dateStr)}
+                        disabled={loadingCheckin === selectedDay.dateStr}
+                      >
+                        {loadingCheckin === selectedDay.dateStr
+                          ? <ActivityIndicator color="#ff4d4d" />
+                          : <Text style={styles.btnCancelText}>Cancelar check-in</Text>}
+                      </TouchableOpacity>
+                    ) : selectedDay.isToday && canCheckinToday ? (
+                      <TouchableOpacity
+                        testID="home-checkin-button"
+                        accessibilityRole="button"
+                        accessibilityLabel="Fazer check-in"
+                        style={styles.btnCheckin}
+                        onPress={() => handleCheckin(selectedDay.dateStr)}
+                        disabled={loadingCheckin === selectedDay.dateStr || checkinCredits <= 0}
+                      >
+                        {loadingCheckin === selectedDay.dateStr
+                          ? <ActivityIndicator color="#000" />
+                          : <Text style={styles.btnCheckinText}>Fazer check-in</Text>}
+                      </TouchableOpacity>
+                    ) : (
+                      <View style={styles.blockedCard}>
+                        <Text style={styles.blockedText}>
+                          {selectedDay.isToday
+                            ? 'Check-in encerrado para hoje. Faca check-in no proximo treino.'
+                            : 'Check-in disponivel apenas no dia do treino.'}
+                        </Text>
+                      </View>
+                    )}
+                  </>
+                )}
 
-                      {status === 'justified' && justifs[selectedDay.dateStr] && (
-                        <View style={styles.justifBox}>
-                          <Text style={styles.justifLabel}>Justificativa:</Text>
-                          <Text style={styles.justifText}>{justifs[selectedDay.dateStr]}</Text>
-                        </View>
-                      )}
-
-                      {status === 'present' && selectedDay.isToday && (
-                        <TouchableOpacity
-                          style={styles.btnCancel}
-                          onPress={() => handleCancelEntry(selectedDay.dateStr)}
-                        >
-                          <Text style={styles.btnCancelText}>✕ Cancelar check-in</Text>
-                        </TouchableOpacity>
-                      )}
-
-                      {status === 'justified' && (
-                        <TouchableOpacity
-                          style={styles.btnCancel}
-                          onPress={() => handleCancelEntry(selectedDay.dateStr)}
-                        >
-                          <Text style={styles.btnCancelText}>✕ Cancelar justificativa</Text>
-                        </TouchableOpacity>
-                      )}
-
-                      {!status && selectedDay.isToday && (
-                        <View style={styles.modalActions}>
-                          <TouchableOpacity
-                            testID="home-checkin-button"
-                            accessibilityRole="button"
-                            accessibilityLabel="Fazer check-in"
-                            style={[styles.btnCheckin, justifyText.trim() && { opacity: 0.3 }]}
-                            onPress={() => handleCheckin(selectedDay.dateStr)}
-                            disabled={!!loadingCheckin || !!justifyText.trim()}
-                          >
-                            {loadingCheckin === selectedDay.dateStr
-                              ? <ActivityIndicator color="#000" />
-                              : <Text style={styles.btnCheckinText}>✓ Fazer Check-in</Text>}
-                          </TouchableOpacity>
-
-                          <Text style={styles.justifTitle}>Justificar falta</Text>
-                          <TextInput
-                            testID="home-justify-input"
-                            accessibilityLabel="Motivo da falta"
-                            style={styles.justifInput}
-                            placeholder="Motivo da falta..."
-                            placeholderTextColor="#555"
-                            value={justifyText}
-                            onChangeText={setJustifyText}
-                            multiline
-                            blurOnSubmit
-                          />
-                          {justifyText.trim() ? (
-                            <View style={styles.justifBtnRow}>
-                              <TouchableOpacity
-                                style={styles.btnCancelJustif}
-                                onPress={() => { setJustifyText(''); Keyboard.dismiss() }}
-                              >
-                                <Text style={styles.btnCancelJustifText}>Cancelar</Text>
-                              </TouchableOpacity>
-                              <TouchableOpacity
-                                testID="home-justify-submit"
-                                accessibilityRole="button"
-                                accessibilityLabel="Enviar justificativa"
-                                style={[styles.btnJustify, { flex: 1 }]}
-                                onPress={handleJustify}
-                                disabled={justifyLoading}
-                              >
-                                {justifyLoading
-                                  ? <ActivityIndicator color="#FFD600" />
-                                  : <Text style={styles.btnJustifyText}>Enviar</Text>}
-                              </TouchableOpacity>
-                            </View>
-                          ) : (
-                            <TouchableOpacity
-                              style={[styles.btnJustify, { opacity: 0.4 }]}
-                              disabled
-                            >
-                              <Text style={styles.btnJustifyText}>Enviar justificativa</Text>
-                            </TouchableOpacity>
-                          )}
-                        </View>
-                      )}
-
-                      {!status && selectedDay.isPast && !selectedDay.isToday && (
-                        <View style={styles.blockedCard}>
-                          <Text style={styles.blockedText}>Check-in não disponível para dias anteriores.</Text>
-                        </View>
-                      )}
-
-                    </>
-                  )}
-
-                  <TouchableOpacity style={styles.modalClose} onPress={closeModal}>
-                    <Text style={styles.modalCloseText}>Fechar</Text>
-                  </TouchableOpacity>
-                </>
-              )}
-              </ScrollView>
-            </Pressable>
-          </KeyboardAvoidingView>
+                <TouchableOpacity style={styles.modalClose} onPress={() => setSelectedDay(null)}>
+                  <Text style={styles.modalCloseText}>Fechar</Text>
+                </TouchableOpacity>
+              </>
+            )}
+          </Pressable>
         </Pressable>
       </Modal>
 
@@ -418,19 +472,8 @@ const styles = StyleSheet.create({
   greeting: { fontSize: 24, fontWeight: 'bold', color: '#fff' },
   date: { fontSize: 13, color: '#666', marginTop: 2 },
   avatar: { width: 46, height: 46, borderRadius: 23, borderWidth: 2, borderColor: '#FFD600' },
-
-  statsRow: { flexDirection: 'row', gap: 10, marginBottom: 20 },
-  statBox: { flex: 1, backgroundColor: '#1e1e1e', borderRadius: 14, padding: 14, gap: 4 },
-  statBoxWarning: { borderWidth: 1, borderColor: '#ff6b00' },
-  statTopRow: { flexDirection: 'row', alignItems: 'flex-end', gap: 2 },
-  statValue: { fontSize: 28, fontWeight: 'bold', color: '#FFD600', lineHeight: 32 },
-  statGoal: { fontSize: 16, color: '#555', marginBottom: 2 },
-  statLabel: { fontSize: 11, color: '#666' },
-  statSub: { fontSize: 11, color: '#555' },
-  progressBg: { height: 5, backgroundColor: '#2a2a2a', borderRadius: 3, marginTop: 6 },
-  progressFill: { height: 5, backgroundColor: '#FFD600', borderRadius: 3 },
-  progressHint: { fontSize: 10, color: '#888', marginTop: 4 },
-  warningBadge: { fontSize: 11, color: '#ff6b00', marginTop: 4, fontWeight: 'bold' },
+  avatarPlaceholder: { backgroundColor: '#222', alignItems: 'center', justifyContent: 'center' },
+  avatarInitial: { color: '#FFD600', fontSize: 18, fontWeight: 'bold' },
 
   monthCard: {
     backgroundColor: '#1e1e1e', borderRadius: 14, padding: 16,
@@ -441,6 +484,16 @@ const styles = StyleSheet.create({
   progressFill: { height: 5, backgroundColor: '#FFD600', borderRadius: 3 },
   progressSub: { fontSize: 11, color: '#555', marginTop: 6 },
   cardWarning: { borderLeftColor: '#ff6b00' },
+  pendingBanner: {
+    backgroundColor: '#211d08',
+    borderRadius: 10,
+    borderLeftWidth: 3,
+    borderLeftColor: '#FFD600',
+    padding: 12,
+    marginBottom: 12,
+  },
+  pendingBannerTitle: { color: '#FFD600', fontSize: 13, fontWeight: 'bold' },
+  pendingBannerText: { color: '#aaa', fontSize: 12, lineHeight: 17, marginTop: 3 },
 
   nextTrainingCard: {
     backgroundColor: '#1e1e1e', borderRadius: 12, padding: 14,
@@ -460,14 +513,12 @@ const styles = StyleSheet.create({
   dayBoxTraining: { backgroundColor: '#1a1600', borderWidth: 1, borderColor: '#333' },
   dayBoxToday: { backgroundColor: '#FFD600' },
   dayBoxPresent: { backgroundColor: '#1a3a1a', borderColor: '#4caf50', borderWidth: 1 },
-  dayBoxJustified: { backgroundColor: '#2a2a2a', borderColor: '#444', borderWidth: 1},
+  dayBoxPending: { backgroundColor: '#302900', borderColor: '#FFD600', borderWidth: 1 },
   dayLabel: { fontSize: 10, color: '#666' },
   dayLabelTraining: { color: '#aaa' },
   dayNum: { fontSize: 14, fontWeight: 'bold', color: '#fff' },
   dayNumToday: { color: '#000' },
-  trainingDot: { width: 6, height: 6, borderRadius: 3, backgroundColor: '#444' },
-  trainingDotYellow: { width: 6, height: 6, borderRadius: 3, backgroundColor: '#000' },
-  statusIcon: { fontSize: 12, color: '#aaa', fontWeight: 'bold' },
+  statusIcon: { fontSize: 12, fontWeight: 'bold' },
 
   championCard: {
     flexDirection: 'row', backgroundColor: '#1e1e1e', borderRadius: 14,
@@ -483,31 +534,29 @@ const styles = StyleSheet.create({
   modalInfoRow: { flexDirection: 'row', justifyContent: 'space-between', paddingVertical: 8, borderBottomWidth: 1, borderBottomColor: '#2a2a2a' },
   modalInfoLabel: { color: '#666', fontSize: 13 },
   modalInfoValue: { color: '#fff', fontSize: 13, fontWeight: '500' },
-  justifBox: { backgroundColor: '#111', borderRadius: 10, padding: 12 },
-  justifLabel: { color: '#666', fontSize: 11, marginBottom: 4 },
-  justifText: { color: '#ccc', fontSize: 13 },
-  modalActions: { gap: 10, marginTop: 4 },
-  btnCheckin: { backgroundColor: '#FFD600', borderRadius: 10, paddingVertical: 13, alignItems: 'center' },
+  btnCheckin: { backgroundColor: '#FFD600', borderRadius: 10, paddingVertical: 13, alignItems: 'center', marginTop: 10 },
   btnCheckinText: { color: '#000', fontWeight: 'bold', fontSize: 15 },
-  justifTitle: { color: '#888', fontSize: 12, marginTop: 4 },
-  justifInput: { backgroundColor: '#111', color: '#fff', borderRadius: 10, padding: 12, borderWidth: 1, borderColor: '#333', minHeight: 70, textAlignVertical: 'top' },
-  justifBtnRow: { flexDirection: 'row', gap: 8 },
-  btnCancelJustif: { borderWidth: 1, borderColor: '#444', borderRadius: 10, paddingVertical: 12, paddingHorizontal: 16, alignItems: 'center' },
-  btnCancelJustifText: { color: '#888', fontWeight: 'bold', fontSize: 14 },
-  btnJustify: { borderWidth: 1, borderColor: '#FFD600', borderRadius: 10, paddingVertical: 12, alignItems: 'center' },
-  btnJustifyText: { color: '#FFD600', fontWeight: 'bold', fontSize: 14 },
-  btnCancel: { borderWidth: 1, borderColor: '#ff4d4d', borderRadius: 10, paddingVertical: 12, alignItems: 'center', marginTop: 4 },
+  btnCancel: { borderWidth: 1, borderColor: '#ff4d4d', borderRadius: 10, paddingVertical: 12, alignItems: 'center', marginTop: 10 },
   btnCancelText: { color: '#ff4d4d', fontWeight: 'bold', fontSize: 14 },
+  pendingModalCard: {
+    backgroundColor: '#111',
+    borderRadius: 10,
+    padding: 12,
+    marginTop: 10,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+  },
+  pendingModalText: { color: '#bbb', fontSize: 13, lineHeight: 18, flex: 1 },
   blockedCard: {
-    backgroundColor: '#1a1a1a',
+    backgroundColor: '#111',
     borderRadius: 10,
     borderLeftWidth: 3,
     borderLeftColor: '#ff4d4d',
     padding: 12,
-    marginTop: 4,
+    marginTop: 10,
   },
   blockedText: { color: '#888', fontSize: 13 },
   modalClose: { marginTop: 4, alignItems: 'center', paddingVertical: 10 },
-
-  modalCloseText:{color:'white'}
+  modalCloseText: { color: 'white' },
 })

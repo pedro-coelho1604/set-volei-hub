@@ -1,6 +1,6 @@
 import { useEffect } from 'react'
 import { useRouter } from 'expo-router'
-import { getStoredUser } from './auth/storage/authStorage'
+import { getStoredUser } from '../storage/authStorage'
 import SplashScreenView from '../components/SplashScreenView'
 
 export default function Index() {

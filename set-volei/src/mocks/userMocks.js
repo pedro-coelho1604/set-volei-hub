@@ -1,5 +1,5 @@
 export const userMock = {
-  avatar: 'https://i.pravatar.cc/300',
+  avatar: '',
   name: 'Pedro Coelho',
   email: 'pedrocoelho@gmail.com',
   password: '123',
@@ -9,6 +9,7 @@ export const userMock = {
   peso: '78',
   altura: '1,85',
   nascimento: '15/03/2000',
+  credito_checkins: 8,
 }
 
 export const planMock = {
