@@ -89,7 +89,8 @@ function mapUserFromApi(user) {
 }
 
 function registerPayload(data) {
-  return {
+  const formData = new FormData()
+  const fields = {
     name: data.name,
     email: data.email,
     password: data.password,
@@ -99,6 +100,24 @@ function registerPayload(data) {
     height_cm: heightToApi(data.height ?? data.altura),
     weight_kg: Number(String(data.weight ?? data.peso).replace(',', '.')),
   }
+
+  Object.entries(fields).forEach(([key, value]) => {
+    formData.append(key, String(value))
+  })
+
+  const photo = data.profilePhoto
+  if (photo?.file) {
+    formData.append('profile_photo', photo.file)
+  } else if (photo?.uri) {
+    const extension = photo.uri.split('.').pop()?.split(/[?#]/)[0] || 'jpg'
+    formData.append('profile_photo', {
+      uri: photo.uri,
+      name: photo.fileName || `profile-photo.${extension}`,
+      type: photo.mimeType || `image/${extension === 'jpg' ? 'jpeg' : extension}`,
+    })
+  }
+
+  return formData
 }
 
 function updatePayload(data) {
@@ -149,12 +168,13 @@ async function parseResponse(response) {
 }
 
 async function request(url, options = {}) {
+  const { multipart = false, ...fetchOptions } = options
   const response = await fetch(url, {
-    ...options,
+    ...fetchOptions,
     headers: {
       Accept: 'application/json',
-      'Content-Type': 'application/json',
-      ...options.headers,
+      ...(!multipart && { 'Content-Type': 'application/json' }),
+      ...fetchOptions.headers,
     },
   })
   const body = await parseResponse(response)
@@ -227,7 +247,8 @@ export async function register(data) {
   try {
     const user = await request(REGISTER_URL, {
       method: 'POST',
-      body: JSON.stringify(registerPayload(data)),
+      multipart: true,
+      body: registerPayload(data),
     })
 
     return { success: true, user: mapUserFromApi(user) }

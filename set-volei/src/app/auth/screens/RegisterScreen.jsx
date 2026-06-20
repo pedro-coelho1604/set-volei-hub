@@ -2,6 +2,7 @@ import { useState } from 'react'
 import {
   View,
   Text,
+  Image,
   TextInput,
   TouchableOpacity,
   StyleSheet,
@@ -11,6 +12,8 @@ import {
   ScrollView,
 } from 'react-native'
 import { useRouter } from 'expo-router'
+import { Ionicons } from '@expo/vector-icons'
+import * as ImagePicker from 'expo-image-picker'
 import { login, register } from '../../../storage/authStorage'
 
 const POSITIONS = [
@@ -38,6 +41,7 @@ export default function RegisterScreen() {
   const [position, setPosition] = useState('levantador')
   const [height, setHeight] = useState('')
   const [weight, setWeight] = useState('')
+  const [profilePhoto, setProfilePhoto] = useState(null)
   const [error, setError] = useState('')
   const [loading, setLoading] = useState(false)
 
@@ -49,6 +53,11 @@ export default function RegisterScreen() {
 
     if (password.length < 8) {
       setError('A senha precisa ter pelo menos 8 caracteres.')
+      return
+    }
+
+    if (!profilePhoto) {
+      setError('Escolha uma foto de perfil pela galeria ou camera.')
       return
     }
 
@@ -64,6 +73,7 @@ export default function RegisterScreen() {
       position,
       height,
       weight,
+      profilePhoto,
     })
 
     if (result.success) {
@@ -82,6 +92,43 @@ export default function RegisterScreen() {
     setError(result.error)
   }
 
+  function applyPhoto(result) {
+    if (!result.canceled && result.assets?.[0]) {
+      setProfilePhoto(result.assets[0])
+      setError('')
+    }
+  }
+
+  async function pickFromGallery() {
+    const permission = await ImagePicker.requestMediaLibraryPermissionsAsync()
+    if (!permission.granted) {
+      setError('Permita o acesso a galeria para escolher sua foto.')
+      return
+    }
+
+    applyPhoto(await ImagePicker.launchImageLibraryAsync({
+      mediaTypes: ['images'],
+      allowsEditing: true,
+      aspect: [1, 1],
+      quality: 0.8,
+    }))
+  }
+
+  async function takePhoto() {
+    const permission = await ImagePicker.requestCameraPermissionsAsync()
+    if (!permission.granted) {
+      setError('Permita o acesso a camera para tirar sua foto.')
+      return
+    }
+
+    applyPhoto(await ImagePicker.launchCameraAsync({
+      mediaTypes: ['images'],
+      allowsEditing: true,
+      aspect: [1, 1],
+      quality: 0.8,
+    }))
+  }
+
   return (
     <KeyboardAvoidingView
       style={styles.container}
@@ -94,6 +141,42 @@ export default function RegisterScreen() {
         </View>
 
         <View style={styles.form}>
+          <View style={styles.photoSection}>
+            <View style={styles.photoPreview}>
+              {profilePhoto ? (
+                <Image
+                  testID="register-photo-preview"
+                  source={{ uri: profilePhoto.uri }}
+                  style={styles.photoImage}
+                />
+              ) : (
+                <Ionicons name="person" size={42} color="#666" />
+              )}
+            </View>
+            <Text style={styles.photoLabel}>Foto de perfil</Text>
+            <View style={styles.photoActions}>
+              <TouchableOpacity
+                testID="register-gallery-button"
+                style={styles.photoButton}
+                onPress={pickFromGallery}
+                accessibilityRole="button"
+                accessibilityLabel="Escolher foto da galeria"
+              >
+                <Ionicons name="images-outline" size={20} color="#FFD600" />
+                <Text style={styles.photoButtonText}>Galeria</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                testID="register-camera-button"
+                style={styles.photoButton}
+                onPress={takePhoto}
+                accessibilityRole="button"
+                accessibilityLabel="Tirar foto com a camera"
+              >
+                <Ionicons name="camera-outline" size={20} color="#FFD600" />
+                <Text style={styles.photoButtonText}>Camera</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
           <Field
             testID="register-name-input"
             placeholder="Nome completo"
@@ -236,6 +319,51 @@ const styles = StyleSheet.create({
   },
   form: {
     gap: 12,
+  },
+  photoSection: {
+    alignItems: 'center',
+    gap: 10,
+    marginBottom: 6,
+  },
+  photoPreview: {
+    width: 96,
+    height: 96,
+    borderRadius: 48,
+    borderWidth: 2,
+    borderColor: '#FFD600',
+    backgroundColor: '#111',
+    alignItems: 'center',
+    justifyContent: 'center',
+    overflow: 'hidden',
+  },
+  photoImage: {
+    width: '100%',
+    height: '100%',
+  },
+  photoLabel: {
+    color: '#aaa',
+    fontSize: 13,
+  },
+  photoActions: {
+    flexDirection: 'row',
+    gap: 10,
+  },
+  photoButton: {
+    minWidth: 112,
+    minHeight: 42,
+    borderWidth: 1,
+    borderColor: '#333',
+    borderRadius: 8,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 8,
+    paddingHorizontal: 14,
+  },
+  photoButtonText: {
+    color: '#fff',
+    fontSize: 14,
+    fontWeight: '600',
   },
   row: {
     flexDirection: 'row',

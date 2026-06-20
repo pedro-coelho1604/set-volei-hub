@@ -8,6 +8,7 @@ import {
   login,
   loginWithBiometrics,
   logout,
+  register,
   updateCurrentUser,
 } from '../src/storage/authStorage'
 
@@ -145,6 +146,54 @@ describe('authStorage', () => {
         }),
       }),
     )
+  })
+
+  it('registers with all fields and the required profile photo as multipart data', async () => {
+    const OriginalFormData = global.FormData
+    class TestFormData {
+      constructor() {
+        this.parts = []
+      }
+
+      append(name, value) {
+        this.parts.push([name, value])
+      }
+    }
+    global.FormData = TestFormData
+    global.fetch.mockResolvedValueOnce(jsonResponse(apiUser()))
+
+    const result = await register({
+      name: 'Pedro Coelho',
+      email: 'pedrocoelho@gmail.com',
+      password: '12345678',
+      birthDate: '15/03/2000',
+      shirtNumber: '10',
+      position: 'levantador',
+      height: '1,85',
+      weight: '78',
+      profilePhoto: {
+        uri: 'file:///profile.jpg',
+        fileName: 'profile.jpg',
+        mimeType: 'image/jpeg',
+      },
+    })
+    global.FormData = OriginalFormData
+
+    expect(result.success).toBe(true)
+    const [, options] = global.fetch.mock.calls[0]
+    expect(options.method).toBe('POST')
+    expect(options.headers).not.toHaveProperty('Content-Type')
+    expect(options.body).toBeInstanceOf(TestFormData)
+    expect(options.body.parts).toEqual(expect.arrayContaining([
+      ['name', 'Pedro Coelho'],
+      ['birth_date', '2000-03-15'],
+      ['height_cm', '185'],
+      ['profile_photo', expect.objectContaining({
+        uri: 'file:///profile.jpg',
+        name: 'profile.jpg',
+        type: 'image/jpeg',
+      })],
+    ]))
   })
 
   it('logs in with biometrics using the saved token', async () => {
